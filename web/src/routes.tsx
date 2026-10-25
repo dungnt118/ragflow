@@ -59,6 +59,7 @@ export enum Routes {
   Team = '/team',
   Plan = '/plan',
   Model = '/model',
+  TokenUsage = '/token-usage',
   Prompt = '/prompt',
   CompilationTemplatesEditNext = '/compilation-templates/edit-next',
   DataSource = '/data-source',
@@ -295,6 +296,10 @@ const routeConfigOptions = [
           {
             path: `${Routes.UserSetting}/model`,
             Component: () => import('@/pages/user-setting/setting-model'),
+          },
+          {
+            path: `${Routes.UserSetting}${Routes.TokenUsage}`,
+            Component: () => import('@/pages/user-setting/setting-token-usage'),
           },
           {
             path: `${Routes.UserSetting}/team`,

@@ -229,6 +229,17 @@ func (s *ChatPipelineService) AsyncChat(
 ) (<-chan AsyncChatResult, error) {
 
 	common.Info("AsyncChat started", zap.String("chat_id", chat.ID))
+	if chat != nil {
+		sessionID, _ := kwargs["session_id"].(string)
+		ctx = common.WithModelUsageMeta(ctx, common.ModelUsageMeta{
+			TenantID:  chat.TenantID,
+			UserID:    userID,
+			AppID:     chat.ID,
+			AppName:   chat.Name,
+			AppType:   "chat",
+			SessionID: sessionID,
+		})
+	}
 
 	// === Phase 1: Entry Validation ===
 	// Guard: messages must be non-empty and the last role must be "user".

@@ -1507,6 +1507,14 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	if sessionID == "" {
 		sessionID = common.GenerateToken()
 	}
+	ctx = common.WithModelUsageMeta(ctx, common.ModelUsageMeta{
+		TenantID:  agentTenantID,
+		UserID:    userID,
+		AppID:     canvasID,
+		AppName:   canvasRow.Title,
+		AppType:   "agent",
+		SessionID: sessionID,
+	})
 	trustedFirstTouch := AgentSessionIDFromContext(ctx) == sessionID
 	if !newSession && s.api4ConversationDAO != nil && dao.DB != nil {
 		existingSession, err := s.api4ConversationDAO.GetMetadataBySessionID(ctx, dao.DB, sessionID, canvasID)

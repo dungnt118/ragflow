@@ -665,6 +665,16 @@ func (r *Router) Setup(engine *gin.Engine) {
 				system.GET("/stats/group", r.statsHandler.GetGroupStats)
 				system.GET("/stats/model", r.statsHandler.GetModelStats)
 
+				tokenUsage := system.Group("/token-usage")
+				{
+					tokenUsage.GET("/dashboard", r.statsHandler.GetTokenUsageDashboard)
+					tokenUsage.GET("/logs", r.statsHandler.ListTokenUsageLogs)
+					tokenUsage.GET("/pricing", r.statsHandler.GetTokenPricingAndBudgets)
+					tokenUsage.PUT("/pricing", r.statsHandler.SaveTokenPricing)
+					tokenUsage.DELETE("/pricing/:id", r.statsHandler.DeleteTokenPricing)
+					tokenUsage.PUT("/budget", r.statsHandler.SaveTokenBudget)
+				}
+
 				config := system.Group("/config")
 				{
 					config.GET("/log", r.systemHandler.GetLogLevel)

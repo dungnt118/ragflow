@@ -1274,43 +1274,128 @@ func (s *Service) BatchDeleteWhiteList(ctx context.Context, ids []int) (map[stri
 
 // GetTokenStats returns API token statistics for the user.
 func (s *Service) GetTokenStats(ctx context.Context, userName, fromDate, toDate, granularity string) ([]map[string]interface{}, error) {
-	result := []map[string]interface{}{
-		{
-			"command":     "get_token_stats",
-			"user_name":   userName,
-			"from_date":   fromDate,
-			"to_date":     toDate,
-			"granularity": granularity,
-			"error":       "'Get API token stats' is not supported",
-		},
+	if dao.DB == nil {
+		return []map[string]interface{}{}, nil
+	}
+	q := dao.DB.WithContext(ctx).Model(&entity.LLMUsageLog{})
+	if userName != "" {
+		user, err := s.userDAO.GetByEmail(ctx, dao.DB, userName)
+		if err == nil && user != nil {
+			q = q.Where("tenant_id = ? OR user_id = ?", user.ID, user.ID)
+		}
+	}
+	if len(fromDate) >= 10 {
+		q = q.Where("stat_date >= ?", fromDate[:10])
+	}
+	if len(toDate) >= 10 {
+		q = q.Where("stat_date <= ?", toDate[:10])
+	}
+	groupCol := "stat_date"
+	if granularity == "month" || granularity == "monthly" {
+		groupCol = "year_month"
+	}
+	type aggRow struct {
+		Period       string  `gorm:"column:period"`
+		ProviderName string  `gorm:"column:provider_name"`
+		Calls        int64   `gorm:"column:calls"`
+		InputTokens  int64   `gorm:"column:input_tokens"`
+		OutputTokens int64   `gorm:"column:output_tokens"`
+		TotalTokens  int64   `gorm:"column:total_tokens"`
+		TotalCostUSD float64 `gorm:"column:total_cost_usd"`
+	}
+	var rows []aggRow
+	_ = q.Select(groupCol + " AS period, provider_name, COUNT(*) AS calls, COALESCE(SUM(input_tokens), 0) AS input_tokens, COALESCE(SUM(output_tokens), 0) AS output_tokens, COALESCE(SUM(total_tokens), 0) AS total_tokens, COALESCE(SUM(total_cost_usd), 0) AS total_cost_usd").
+		Group(groupCol + ", provider_name").
+		Order(groupCol + " ASC").
+		Scan(&rows).Error
+	result := make([]map[string]interface{}, 0, len(rows))
+	for _, r := range rows {
+		result = append(result, map[string]interface{}{
+			"period":         r.Period,
+			"provider_name":  r.ProviderName,
+			"calls":          r.Calls,
+			"input_tokens":   r.InputTokens,
+			"output_tokens":  r.OutputTokens,
+			"total_tokens":   r.TotalTokens,
+			"total_cost_usd": r.TotalCostUSD,
+		})
 	}
 	return result, nil
 }
 
 // GetTokenUsersStats returns API token statistics for all users.
 func (s *Service) GetTokenUsersStats(ctx context.Context, fromDate, toDate string, top int) ([]map[string]interface{}, error) {
-	result := []map[string]interface{}{
-		{
-			"command":   "get_token_users_stats",
-			"from_date": fromDate,
-			"to_date":   toDate,
-			"top":       top,
-			"error":     "'Get API token users stats' is not supported",
-		},
+	if dao.DB == nil {
+		return []map[string]interface{}{}, nil
+	}
+	if top <= 0 {
+		top = 20
+	}
+	q := dao.DB.WithContext(ctx).Model(&entity.LLMUsageLog{})
+	if len(fromDate) >= 10 {
+		q = q.Where("stat_date >= ?", fromDate[:10])
+	}
+	if len(toDate) >= 10 {
+		q = q.Where("stat_date <= ?", toDate[:10])
+	}
+	type userAggRow struct {
+		TenantID     string  `gorm:"column:tenant_id"`
+		Calls        int64   `gorm:"column:calls"`
+		InputTokens  int64   `gorm:"column:input_tokens"`
+		OutputTokens int64   `gorm:"column:output_tokens"`
+		TotalTokens  int64   `gorm:"column:total_tokens"`
+		TotalCostUSD float64 `gorm:"column:total_cost_usd"`
+	}
+	var rows []userAggRow
+	_ = q.Select("tenant_id, COUNT(*) AS calls, COALESCE(SUM(input_tokens), 0) AS input_tokens, COALESCE(SUM(output_tokens), 0) AS output_tokens, COALESCE(SUM(total_tokens), 0) AS total_tokens, COALESCE(SUM(total_cost_usd), 0) AS total_cost_usd").
+		Group("tenant_id").
+		Order("total_tokens DESC").
+		Limit(top).
+		Scan(&rows).Error
+	result := make([]map[string]interface{}, 0, len(rows))
+	for _, r := range rows {
+		result = append(result, map[string]interface{}{
+			"tenant_id":      r.TenantID,
+			"calls":          r.Calls,
+			"input_tokens":   r.InputTokens,
+			"output_tokens":  r.OutputTokens,
+			"total_tokens":   r.TotalTokens,
+			"total_cost_usd": r.TotalCostUSD,
+		})
 	}
 	return result, nil
 }
 
 // GetTokenStatsSummary returns API token statistics summary for all users.
 func (s *Service) GetTokenStatsSummary(ctx context.Context, fromDate, toDate string) (map[string]interface{}, error) {
-	result := map[string]interface{}{
-		"command":   "get_token_stats_summary",
-		"from_date": fromDate,
-		"to_date":   toDate,
-		"error":     "'Get API token stats summary' is not supported",
+	if dao.DB == nil {
+		return map[string]interface{}{}, nil
 	}
-
-	return result, nil
+	q := dao.DB.WithContext(ctx).Model(&entity.LLMUsageLog{})
+	if len(fromDate) >= 10 {
+		q = q.Where("stat_date >= ?", fromDate[:10])
+	}
+	if len(toDate) >= 10 {
+		q = q.Where("stat_date <= ?", toDate[:10])
+	}
+	var sum struct {
+		Calls        int64   `gorm:"column:calls"`
+		InputTokens  int64   `gorm:"column:input_tokens"`
+		OutputTokens int64   `gorm:"column:output_tokens"`
+		TotalTokens  int64   `gorm:"column:total_tokens"`
+		TotalCostUSD float64 `gorm:"column:total_cost_usd"`
+	}
+	_ = q.Select("COUNT(*) AS calls, COALESCE(SUM(input_tokens), 0) AS input_tokens, COALESCE(SUM(output_tokens), 0) AS output_tokens, COALESCE(SUM(total_tokens), 0) AS total_tokens, COALESCE(SUM(total_cost_usd), 0) AS total_cost_usd").
+		Scan(&sum).Error
+	return map[string]interface{}{
+		"from_date":      fromDate,
+		"to_date":        toDate,
+		"calls":          sum.Calls,
+		"input_tokens":   sum.InputTokens,
+		"output_tokens":  sum.OutputTokens,
+		"total_tokens":   sum.TotalTokens,
+		"total_cost_usd": sum.TotalCostUSD,
+	}, nil
 }
 
 // ListLogs lists operation logs for the user.

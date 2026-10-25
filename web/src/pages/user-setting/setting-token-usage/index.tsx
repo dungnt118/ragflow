@@ -479,12 +479,12 @@ const TokenCostDashboardPage: React.FC = () => {
 
   // Compute SVG chart geometry for Daily Cumulative Actual + Forecasted Trajectory
   const svgChart = useMemo(() => {
-    const width = 760;
-    const height = 230;
-    const padLeft = 58;
-    const padRight = 24;
-    const padTop = 20;
-    const padBottom = 32;
+    const width = 800;
+    const height = 280;
+    const padLeft = 85;
+    const padRight = 30;
+    const padTop = 32;
+    const padBottom = 38;
     const innerW = width - padLeft - padRight;
     const innerH = height - padTop - padBottom;
 
@@ -492,19 +492,30 @@ const TokenCostDashboardPage: React.FC = () => {
       return null;
     }
 
-    let maxY = 0.01;
+    let maxActualOrForecast = 0.005;
     for (const pt of dailySeries) {
-      maxY = Math.max(
-        maxY,
+      maxActualOrForecast = Math.max(
+        maxActualOrForecast,
         pt.cumulative_actual_cost_usd || 0,
         pt.cumulative_forecast_cost_usd || 0,
         pt.cumulative_p90_cost_usd || 0,
       );
     }
-    if (kpi && kpi.monthly_budget_usd > 0) {
-      maxY = Math.max(maxY, kpi.monthly_budget_usd * 1.05);
-    } else {
-      maxY = maxY * 1.15;
+
+    const budgetUSD = kpi && kpi.monthly_budget_usd > 0 ? kpi.monthly_budget_usd : 0;
+    let maxY = Math.max(maxActualOrForecast * 1.25, 0.01);
+
+    // If budget is defined:
+    // If usage is still very small compared to budget (e.g. usage < 30% budget),
+    // cap the chart's upper scale so the usage curves remain clearly visible and don't flatten to zero,
+    // while clamping or pinning the budget line cleanly.
+    if (budgetUSD > 0) {
+      if (maxActualOrForecast < budgetUSD * 0.4) {
+        // Zoom in so the curves are tall and readable
+        maxY = Math.max(maxActualOrForecast * 2.2, budgetUSD * 0.15, 0.05);
+      } else {
+        maxY = Math.max(maxY, budgetUSD * 1.12);
+      }
     }
 
     const xForIndex = (idx: number) => {
@@ -537,10 +548,18 @@ const TokenCostDashboardPage: React.FC = () => {
       }
     });
 
-    const budgetY =
-      kpi && kpi.monthly_budget_usd > 0
-        ? yForVal(kpi.monthly_budget_usd)
-        : null;
+    // Budget line position
+    let budgetY: number | null = null;
+    let isBudgetOffChart = false;
+    if (budgetUSD > 0) {
+      if (budgetUSD <= maxY) {
+        budgetY = yForVal(budgetUSD);
+      } else {
+        // Budget is higher than the current zoomed Y scale
+        budgetY = padTop;
+        isBudgetOffChart = true;
+      }
+    }
 
     return {
       width,
@@ -552,6 +571,8 @@ const TokenCostDashboardPage: React.FC = () => {
       innerW,
       innerH,
       maxY,
+      budgetUSD,
+      isBudgetOffChart,
       actualPolyline: actualPoints.join(' '),
       forecastPolyline: forecastPoints.join(' '),
       p90Polyline: p90Points.join(' '),
@@ -1114,10 +1135,23 @@ const TokenCostDashboardPage: React.FC = () => {
               <div className="w-full overflow-x-auto">
                 <svg
                   viewBox={`0 0 ${svgChart.width} ${svgChart.height}`}
-                  className="w-full h-56"
+                  className="w-full h-72"
                   data-testid="daily-forecast-svg-chart"
                 >
-                  {/* Horizontal Grid Lines */}
+                  <defs>
+                    {/* Gradient Fill for Actual Area */}
+                    <linearGradient id="actualAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#10b981" stopOpacity="0.25" />
+                      <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
+                    </linearGradient>
+                    {/* Gradient Fill for Forecast Area */}
+                    <linearGradient id="forecastAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.20" />
+                      <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.0" />
+                    </linearGradient>
+                  </defs>
+
+                  {/* Horizontal Grid Lines & Y-Axis Labels */}
                   {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
                     const y = svgChart.padTop + svgChart.innerH * (1 - ratio);
                     const val = svgChart.maxY * ratio;
@@ -1129,22 +1163,23 @@ const TokenCostDashboardPage: React.FC = () => {
                           x2={svgChart.width - svgChart.padRight}
                           y2={y}
                           stroke="currentColor"
-                          className="text-border-button/50"
-                          strokeDasharray="3 3"
+                          className="text-border-button/60"
+                          strokeDasharray="4 4"
+                          strokeWidth="1"
                         />
                         <text
-                          x={svgChart.padLeft - 6}
+                          x={svgChart.padLeft - 8}
                           y={y + 4}
                           textAnchor="end"
-                          className="fill-text-secondary text-[10px]"
+                          className="fill-text-primary text-[12px] font-medium"
                         >
-                          {formatMoney(val, 2)}
+                          {formatMoney(val, val >= 10 ? 1 : val >= 1 ? 2 : 3)}
                         </text>
                       </g>
                     );
                   })}
 
-                  {/* Budget Limit Line */}
+                  {/* Budget Limit Line & Badge */}
                   {svgChart.budgetY !== null && (
                     <g>
                       <line
@@ -1153,17 +1188,29 @@ const TokenCostDashboardPage: React.FC = () => {
                         x2={svgChart.width - svgChart.padRight}
                         y2={svgChart.budgetY}
                         stroke="#ef4444"
-                        strokeWidth="1.5"
-                        strokeDasharray="6 4"
+                        strokeWidth="2"
+                        strokeDasharray="8 5"
+                      />
+                      {/* Pill Badge for Budget Label */}
+                      <rect
+                        x={svgChart.width - svgChart.padRight - 215}
+                        y={svgChart.budgetY - 24}
+                        width="215"
+                        height="20"
+                        rx="4"
+                        fill="#ef4444"
+                        fillOpacity="0.2"
+                        stroke="#ef4444"
+                        strokeWidth="1"
                       />
                       <text
-                        x={svgChart.width - svgChart.padRight - 4}
-                        y={svgChart.budgetY - 5}
+                        x={svgChart.width - svgChart.padRight - 10}
+                        y={svgChart.budgetY - 10}
                         textAnchor="end"
-                        fill="#ef4444"
-                        className="text-[10px] font-medium"
+                        fill="#f87171"
+                        className="text-[11px] font-semibold tracking-wide"
                       >
-                        Trần ngân sách ({formatMoney(kpi?.monthly_budget_usd, 2)})
+                        {svgChart.isBudgetOffChart ? '▲ ' : ''}Trần ngân sách ({formatMoney(svgChart.budgetUSD, 2)})
                       </text>
                     </g>
                   )}
@@ -1173,19 +1220,19 @@ const TokenCostDashboardPage: React.FC = () => {
                     <polyline
                       fill="none"
                       stroke="#f59e0b"
-                      strokeWidth="1.5"
-                      strokeDasharray="2 4"
+                      strokeWidth="2"
+                      strokeDasharray="3 4"
                       points={svgChart.p90Polyline}
                     />
                   )}
 
-                  {/* Forecasted Cumulative Trajectory Dashed Line */}
+                  {/* Forecasted Cumulative Trajectory Line */}
                   {svgChart.forecastPolyline && (
                     <polyline
                       fill="none"
                       stroke="#38bdf8"
-                      strokeWidth="2.2"
-                      strokeDasharray="6 4"
+                      strokeWidth="2.8"
+                      strokeDasharray="7 5"
                       points={svgChart.forecastPolyline}
                     />
                   )}
@@ -1195,10 +1242,21 @@ const TokenCostDashboardPage: React.FC = () => {
                     <polyline
                       fill="none"
                       stroke="#10b981"
-                      strokeWidth="2.8"
+                      strokeWidth="3.2"
                       points={svgChart.actualPolyline}
                     />
                   )}
+
+                  {/* X-Axis Base Line */}
+                  <line
+                    x1={svgChart.padLeft}
+                    y1={svgChart.height - svgChart.padBottom}
+                    x2={svgChart.width - svgChart.padRight}
+                    y2={svgChart.height - svgChart.padBottom}
+                    stroke="currentColor"
+                    className="text-border-button"
+                    strokeWidth="1.2"
+                  />
 
                   {/* X-Axis Day Labels */}
                   {dailySeries.map((pt, idx) => {
@@ -1211,32 +1269,48 @@ const TokenCostDashboardPage: React.FC = () => {
                     }
                     const x = svgChart.xForIndex(idx);
                     return (
-                      <text
-                        key={pt.date}
-                        x={x}
-                        y={svgChart.height - 8}
-                        textAnchor="middle"
-                        className="fill-text-secondary text-[10px]"
-                      >
-                        {pt.date.slice(5)}
-                      </text>
+                      <g key={pt.date}>
+                        <line
+                          x1={x}
+                          y1={svgChart.height - svgChart.padBottom}
+                          x2={x}
+                          y2={svgChart.height - svgChart.padBottom + 5}
+                          stroke="currentColor"
+                          className="text-border-button"
+                          strokeWidth="1"
+                        />
+                        <text
+                          x={x}
+                          y={svgChart.height - 12}
+                          textAnchor="middle"
+                          className="fill-text-primary text-[12px] font-medium"
+                        >
+                          {pt.date.slice(5)}
+                        </text>
+                      </g>
                     );
                   })}
                 </svg>
 
-                <div className="flex flex-wrap items-center justify-center gap-5 text-xs text-text-secondary mt-1">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-3 h-0.5 bg-emerald-500 inline-block" />
-                    Chi phí thực tế lũy kế (Actual MTD)
+                <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-text-secondary mt-2 pb-1 border-t border-border-button/40 pt-2.5">
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-1 bg-emerald-500 rounded-sm inline-block" />
+                    <strong className="text-text-primary font-medium">Chi phí thực tế lũy kế (Actual MTD)</strong>
                   </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-3 h-0.5 bg-sky-400 inline-block border-b border-dashed" />
-                    Quỹ đạo dự báo cuối tháng (Forecast P50)
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-1 bg-sky-400 rounded-sm inline-block border-b-2 border-dashed border-sky-300" />
+                    <strong className="text-text-primary font-medium">Quỹ đạo dự báo cuối tháng (Forecast P50)</strong>
                   </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-3 h-0.5 bg-amber-500 inline-block" />
-                    Biên độ thận trọng (P90 Upper Bound)
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-1 bg-amber-500 rounded-sm inline-block border-b border-dotted" />
+                    <strong className="text-text-primary font-medium">Biên độ thận trọng (P90 Upper Bound)</strong>
                   </span>
+                  {svgChart.budgetUSD > 0 && (
+                    <span className="flex items-center gap-2">
+                      <span className="w-4 h-1 bg-red-500 rounded-sm inline-block border-b border-dashed border-red-300" />
+                      <strong className="text-red-400 font-medium">Trần ngân sách tháng</strong>
+                    </span>
+                  )}
                 </div>
               </div>
             ) : (

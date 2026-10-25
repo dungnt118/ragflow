@@ -23,6 +23,13 @@ import message from '@/components/ui/message';
 import { Modal } from '@/components/ui/modal/modal';
 import request from '@/utils/request';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Activity,
   AlertTriangle,
   BarChart3,
@@ -675,81 +682,178 @@ const TokenCostDashboardPage: React.FC = () => {
         className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 bg-bg-card border border-border-button rounded-lg p-3.5"
         data-testid="token-usage-filter-bar"
       >
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           <label className="text-xs text-text-secondary flex items-center gap-1">
             <Calendar className="size-3.5" /> Tháng báo cáo
           </label>
-          <select
+          <Select
             value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            data-testid="filter-select-month"
-            className="h-9 rounded-md border border-border-button bg-bg-input px-2.5 text-sm text-text-primary focus:outline-none"
+            onValueChange={(val) => setSelectedMonth(val)}
           >
-            {(
-              dashboard?.available_filters?.months || [currentYearMonth()]
-            ).map((m) => (
-              <option key={m} value={m}>
-                Tháng {m}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger
+              data-testid="filter-select-month"
+              className="h-9 w-full bg-bg-input border-border-button text-text-primary"
+            >
+              <SelectValue placeholder="Chọn tháng" />
+            </SelectTrigger>
+            <SelectContent className="bg-bg-card border-border-button text-text-primary">
+              {(
+                dashboard?.available_filters?.months || [currentYearMonth()]
+              ).map((m) => (
+                <SelectItem
+                  key={m}
+                  value={m}
+                  className="text-text-primary hover:bg-border-button focus:bg-border-button focus:text-text-primary cursor-pointer"
+                >
+                  Tháng {m}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           <label className="text-xs text-text-secondary flex items-center gap-1">
             <Cpu className="size-3.5" /> Nhà cung cấp (LLM Provider)
           </label>
-          <select
+          <Select
             value={providerFilter}
-            onChange={(e) => setProviderFilter(e.target.value)}
-            data-testid="filter-select-provider"
-            className="h-9 rounded-md border border-border-button bg-bg-input px-2.5 text-sm text-text-primary focus:outline-none"
+            onValueChange={(val) => setProviderFilter(val)}
           >
-            <option value="all">Tất cả LLM Providers</option>
-            {(dashboard?.available_filters?.providers || []).map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger
+              data-testid="filter-select-provider"
+              className="h-9 w-full bg-bg-input border-border-button text-text-primary"
+            >
+              <SelectValue placeholder="Tất cả LLM Providers" />
+            </SelectTrigger>
+            <SelectContent className="bg-bg-card border-border-button text-text-primary">
+              <SelectItem
+                value="all"
+                className="text-text-primary hover:bg-border-button focus:bg-border-button focus:text-text-primary cursor-pointer"
+              >
+                Tất cả LLM Providers
+              </SelectItem>
+              {(dashboard?.available_filters?.providers || []).map((p) => (
+                <SelectItem
+                  key={p}
+                  value={p}
+                  className="text-text-primary hover:bg-border-button focus:bg-border-button focus:text-text-primary cursor-pointer"
+                >
+                  {p}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           <label className="text-xs text-text-secondary flex items-center gap-1">
             <Layers className="size-3.5" /> Loại mô hình (Model Type)
           </label>
-          <select
+          <Select
             value={modelTypeFilter}
-            onChange={(e) => setModelTypeFilter(e.target.value)}
-            data-testid="filter-select-model-type"
-            className="h-9 rounded-md border border-border-button bg-bg-input px-2.5 text-sm text-text-primary focus:outline-none"
+            onValueChange={(val) => setModelTypeFilter(val)}
           >
-            <option value="all">Tất cả loại mô hình</option>
-            <option value="chat">Chat / Reasoning LLM</option>
-            <option value="embedding">Embedding (Vector hóa)</option>
-            <option value="rerank">Rerank (Xếp hạng lại)</option>
-            <option value="ocr">OCR / Image2Text</option>
-            <option value="speech2text">ASR / Speech2Text</option>
-            <option value="tts">TTS / Text2Speech</option>
-          </select>
+            <SelectTrigger
+              data-testid="filter-select-model-type"
+              className="h-9 w-full bg-bg-input border-border-button text-text-primary"
+            >
+              <SelectValue placeholder="Tất cả loại mô hình" />
+            </SelectTrigger>
+            <SelectContent className="bg-bg-card border-border-button text-text-primary">
+              <SelectItem
+                value="all"
+                className="text-text-primary hover:bg-border-button focus:bg-border-button focus:text-text-primary cursor-pointer"
+              >
+                Tất cả loại mô hình
+              </SelectItem>
+              <SelectItem
+                value="chat"
+                className="text-text-primary hover:bg-border-button focus:bg-border-button focus:text-text-primary cursor-pointer"
+              >
+                Chat / Reasoning LLM
+              </SelectItem>
+              <SelectItem
+                value="embedding"
+                className="text-text-primary hover:bg-border-button focus:bg-border-button focus:text-text-primary cursor-pointer"
+              >
+                Embedding (Vector hóa)
+              </SelectItem>
+              <SelectItem
+                value="rerank"
+                className="text-text-primary hover:bg-border-button focus:bg-border-button focus:text-text-primary cursor-pointer"
+              >
+                Rerank (Xếp hạng lại)
+              </SelectItem>
+              <SelectItem
+                value="ocr"
+                className="text-text-primary hover:bg-border-button focus:bg-border-button focus:text-text-primary cursor-pointer"
+              >
+                OCR / Image2Text
+              </SelectItem>
+              <SelectItem
+                value="speech2text"
+                className="text-text-primary hover:bg-border-button focus:bg-border-button focus:text-text-primary cursor-pointer"
+              >
+                ASR / Speech2Text
+              </SelectItem>
+              <SelectItem
+                value="tts"
+                className="text-text-primary hover:bg-border-button focus:bg-border-button focus:text-text-primary cursor-pointer"
+              >
+                TTS / Text2Speech
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           <label className="text-xs text-text-secondary flex items-center gap-1">
             <Filter className="size-3.5" /> Nguồn tác vụ (Operation Source)
           </label>
-          <select
+          <Select
             value={appTypeFilter}
-            onChange={(e) => setAppTypeFilter(e.target.value)}
-            data-testid="filter-select-app-type"
-            className="h-9 rounded-md border border-border-button bg-bg-input px-2.5 text-sm text-text-primary focus:outline-none"
+            onValueChange={(val) => setAppTypeFilter(val)}
           >
-            <option value="all">Tất cả nguồn tác vụ</option>
-            <option value="chat">Chat Assistant</option>
-            <option value="agent">Agent Workflow</option>
-            <option value="ingestion">Document Ingestion</option>
-            <option value="retrieval">Retrieval & Rerank</option>
-          </select>
+            <SelectTrigger
+              data-testid="filter-select-app-type"
+              className="h-9 w-full bg-bg-input border-border-button text-text-primary"
+            >
+              <SelectValue placeholder="Tất cả nguồn tác vụ" />
+            </SelectTrigger>
+            <SelectContent className="bg-bg-card border-border-button text-text-primary">
+              <SelectItem
+                value="all"
+                className="text-text-primary hover:bg-border-button focus:bg-border-button focus:text-text-primary cursor-pointer"
+              >
+                Tất cả nguồn tác vụ
+              </SelectItem>
+              <SelectItem
+                value="chat"
+                className="text-text-primary hover:bg-border-button focus:bg-border-button focus:text-text-primary cursor-pointer"
+              >
+                Chat Assistant
+              </SelectItem>
+              <SelectItem
+                value="agent"
+                className="text-text-primary hover:bg-border-button focus:bg-border-button focus:text-text-primary cursor-pointer"
+              >
+                Agent Workflow
+              </SelectItem>
+              <SelectItem
+                value="ingestion"
+                className="text-text-primary hover:bg-border-button focus:bg-border-button focus:text-text-primary cursor-pointer"
+              >
+                Document Ingestion
+              </SelectItem>
+              <SelectItem
+                value="retrieval"
+                className="text-text-primary hover:bg-border-button focus:bg-border-button focus:text-text-primary cursor-pointer"
+              >
+                Retrieval & Rerank
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="flex flex-col justify-end">
@@ -763,7 +867,7 @@ const TokenCostDashboardPage: React.FC = () => {
               setAppTypeFilter('all');
             }}
             data-testid="btn-reset-token-filters"
-            className="h-9 border border-border-button"
+            className="h-9 border border-border-button text-text-primary hover:bg-border-button"
           >
             Đặt lại bộ lọc
           </Button>

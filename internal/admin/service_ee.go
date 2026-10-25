@@ -1292,7 +1292,7 @@ func (s *Service) GetTokenStats(ctx context.Context, userName, fromDate, toDate,
 	}
 	groupCol := "stat_date"
 	if granularity == "month" || granularity == "monthly" {
-		groupCol = "year_month"
+		groupCol = "`year_month`"
 	}
 	type aggRow struct {
 		Period       string  `gorm:"column:period"`

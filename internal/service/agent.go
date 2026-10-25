@@ -1507,11 +1507,15 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	if sessionID == "" {
 		sessionID = common.GenerateToken()
 	}
+	appTitle := ""
+	if canvasRow.Title != nil {
+		appTitle = *canvasRow.Title
+	}
 	ctx = common.WithModelUsageMeta(ctx, common.ModelUsageMeta{
 		TenantID:  agentTenantID,
 		UserID:    userID,
 		AppID:     canvasID,
-		AppName:   canvasRow.Title,
+		AppName:   appTitle,
 		AppType:   "agent",
 		SessionID: sessionID,
 	})

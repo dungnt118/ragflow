@@ -431,14 +431,22 @@ func (s *TokenAnalyticsService) ensureHistoricalBackfill(ctx context.Context, db
 				}
 			}
 		}
-		dialogMap[d.ID] = appMeta{name: d.Name, provider: prov, model: mdl}
+		dName := d.ID
+		if d.Name != nil && strings.TrimSpace(*d.Name) != "" {
+			dName = *d.Name
+		}
+		dialogMap[d.ID] = appMeta{name: dName, provider: prov, model: mdl}
 	}
 
 	canvasMap := make(map[string]appMeta)
 	var canvases []entity.UserCanvas
 	_ = db.WithContext(ctx).Where("user_id = ?", tenantID).Find(&canvases).Error
 	for _, c := range canvases {
-		canvasMap[c.ID] = appMeta{name: c.Title, provider: defaultProvider, model: defaultModel}
+		cTitle := c.ID
+		if c.Title != nil && strings.TrimSpace(*c.Title) != "" {
+			cTitle = *c.Title
+		}
+		canvasMap[c.ID] = appMeta{name: cTitle, provider: defaultProvider, model: defaultModel}
 	}
 
 	var batch []entity.LLMUsageLog
@@ -450,12 +458,14 @@ func (s *TokenAnalyticsService) ensureHistoricalBackfill(ctx context.Context, db
 		for id := range dialogMap {
 			dialogIDs = append(dialogIDs, id)
 		}
-		_ = db.WithContext(ctx).Select("id, dialog_id, user_id").Where("dialog_id IN ?", dialogIDs).Limit(200).Find(&chatSessions).Error
+		_ = db.WithContext(ctx).Select("id, dialog_id, user_id, create_date").Where("dialog_id IN ?", dialogIDs).Limit(200).Find(&chatSessions).Error
 	}
 	sessionToDialog := make(map[string]string, len(chatSessions))
+	sessionToCreateDate := make(map[string]*time.Time, len(chatSessions))
 	sessionIDs := make([]string, 0, len(chatSessions))
 	for _, sess := range chatSessions {
 		sessionToDialog[sess.ID] = sess.DialogID
+		sessionToCreateDate[sess.ID] = sess.CreateDate
 		sessionIDs = append(sessionIDs, sess.ID)
 	}
 	if len(sessionIDs) > 0 {
@@ -463,14 +473,22 @@ func (s *TokenAnalyticsService) ensureHistoricalBackfill(ctx context.Context, db
 		_ = db.WithContext(ctx).Where("conversation_id IN ?", sessionIDs).Order("conversation_id ASC, position ASC").Limit(1000).Find(&msgs).Error
 		lastUserTokens := 40
 		for _, m := range msgs {
-			if strings.EqualFold(m.Role, "user") {
-				tk := tokenizer.NumTokensFromString(m.Content)
+			roleStr := ""
+			if m.Role != nil {
+				roleStr = *m.Role
+			}
+			contentStr := ""
+			if m.Content != nil {
+				contentStr = *m.Content
+			}
+			if strings.EqualFold(roleStr, "user") {
+				tk := tokenizer.NumTokensFromString(contentStr)
 				if tk > 0 {
 					lastUserTokens = tk + 25
 				}
 				continue
 			}
-			if !strings.EqualFold(m.Role, "assistant") {
+			if !strings.EqualFold(roleStr, "assistant") {
 				continue
 			}
 			dlgID := sessionToDialog[m.ConversationID]
@@ -479,21 +497,20 @@ func (s *TokenAnalyticsService) ensureHistoricalBackfill(ctx context.Context, db
 				meta = appMeta{name: "Chat Assistant", provider: defaultProvider, model: defaultModel}
 			}
 			inTk := int64(lastUserTokens)
-			outTk := int64(tokenizer.NumTokensFromString(m.Content))
-			if m.Usage != nil {
-				if pt, ok := toInt64(m.Usage["prompt_tokens"]); ok && pt > 0 {
-					inTk = pt
-				}
-				if ct, ok := toInt64(m.Usage["completion_tokens"]); ok && ct > 0 {
-					outTk = ct
-				}
-			}
+			outTk := int64(tokenizer.NumTokensFromString(contentStr))
 			if outTk <= 0 {
 				outTk = 30
 			}
 			msgTime := time.Now().Truncate(time.Second)
-			if m.CreateDate != nil && !m.CreateDate.IsZero() {
-				msgTime = *m.CreateDate
+			if m.CreatedAt != nil && *m.CreatedAt > 0 {
+				sec := int64(*m.CreatedAt)
+				if sec > 1e12 {
+					msgTime = time.UnixMilli(sec).Truncate(time.Second)
+				} else {
+					msgTime = time.Unix(sec, 0).Truncate(time.Second)
+				}
+			} else if cd := sessionToCreateDate[m.ConversationID]; cd != nil && !cd.IsZero() {
+				msgTime = *cd
 			}
 			inPrice, outPrice := s.usageDAO.ResolveUnitPrice(ctx, db, tenantID, meta.provider, meta.model, "chat")
 			inCost, outCost, totalCost := dao.CalculateCostUSD(inTk, outTk, inPrice, outPrice)
@@ -531,7 +548,7 @@ func (s *TokenAnalyticsService) ensureHistoricalBackfill(ctx context.Context, db
 
 	// 2. Backfill API / Agent messages
 	var apiConvs []entity.API4Conversation
-	_ = db.WithContext(ctx).Select("id, dialog_id, user_id, source").Where("user_id = ?", tenantID).Limit(200).Find(&apiConvs).Error
+	_ = db.WithContext(ctx).Select("id, dialog_id, user_id, source, create_date").Where("user_id = ?", tenantID).Limit(200).Find(&apiConvs).Error
 	if len(apiConvs) > 0 {
 		apiConvMap := make(map[string]entity.API4Conversation, len(apiConvs))
 		apiConvIDs := make([]string, 0, len(apiConvs))
@@ -543,14 +560,22 @@ func (s *TokenAnalyticsService) ensureHistoricalBackfill(ctx context.Context, db
 		_ = db.WithContext(ctx).Where("conversation_id IN ?", apiConvIDs).Order("conversation_id ASC, position ASC").Limit(1000).Find(&apiMsgs).Error
 		lastUserTokens := 50
 		for _, m := range apiMsgs {
-			if strings.EqualFold(m.Role, "user") {
-				tk := tokenizer.NumTokensFromString(m.Content)
+			roleStr := ""
+			if m.Role != nil {
+				roleStr = *m.Role
+			}
+			contentStr := ""
+			if m.Content != nil {
+				contentStr = *m.Content
+			}
+			if strings.EqualFold(roleStr, "user") {
+				tk := tokenizer.NumTokensFromString(contentStr)
 				if tk > 0 {
 					lastUserTokens = tk + 30
 				}
 				continue
 			}
-			if !strings.EqualFold(m.Role, "assistant") {
+			if !strings.EqualFold(roleStr, "assistant") {
 				continue
 			}
 			ac := apiConvMap[m.ConversationID]
@@ -567,13 +592,20 @@ func (s *TokenAnalyticsService) ensureHistoricalBackfill(ctx context.Context, db
 				meta = dm
 			}
 			inTk := int64(lastUserTokens)
-			outTk := int64(tokenizer.NumTokensFromString(m.Content))
+			outTk := int64(tokenizer.NumTokensFromString(contentStr))
 			if outTk <= 0 {
 				outTk = 35
 			}
 			msgTime := time.Now().Truncate(time.Second)
-			if m.CreateDate != nil && !m.CreateDate.IsZero() {
-				msgTime = *m.CreateDate
+			if m.CreatedAt != nil && *m.CreatedAt > 0 {
+				sec := int64(*m.CreatedAt)
+				if sec > 1e12 {
+					msgTime = time.UnixMilli(sec).Truncate(time.Second)
+				} else {
+					msgTime = time.Unix(sec, 0).Truncate(time.Second)
+				}
+			} else if ac.CreateDate != nil && !ac.CreateDate.IsZero() {
+				msgTime = *ac.CreateDate
 			}
 			inPrice, outPrice := s.usageDAO.ResolveUnitPrice(ctx, db, tenantID, meta.provider, meta.model, "chat")
 			inCost, outCost, totalCost := dao.CalculateCostUSD(inTk, outTk, inPrice, outPrice)
@@ -716,7 +748,7 @@ func (s *TokenAnalyticsService) GetDashboardSummary(ctx context.Context, db *gor
 	if filter.FromDate != "" && filter.ToDate != "" {
 		monthQuery = monthQuery.Where("stat_date >= ? AND stat_date <= ?", filter.FromDate[:10], filter.ToDate[:10])
 	} else {
-		monthQuery = monthQuery.Where("year_month = ?", selectedMonth)
+		monthQuery = monthQuery.Where("`year_month` = ?", selectedMonth)
 	}
 
 	var monthLogs []entity.LLMUsageLog
@@ -732,7 +764,7 @@ func (s *TokenAnalyticsService) GetDashboardSummary(ctx context.Context, db *gor
 	}
 	_ = baseQuery(db.WithContext(ctx).Model(&entity.LLMUsageLog{})).
 		Select("COALESCE(SUM(total_tokens), 0) AS total_tokens, COALESCE(SUM(total_cost_usd), 0) AS total_cost_usd").
-		Where("year_month = ?", prevMonthStr).
+		Where("`year_month` = ?", prevMonthStr).
 		Scan(&prevMonthAgg).Error
 
 	// Aggregate selected month logs
@@ -1275,9 +1307,9 @@ func (s *TokenAnalyticsService) buildMonthlyHistory(
 
 	var rows []mRow
 	_ = db.WithContext(ctx).Model(&entity.LLMUsageLog{}).
-		Select("year_month, provider_name, COUNT(*) AS calls, COALESCE(SUM(input_tokens), 0) AS input_tokens, COALESCE(SUM(output_tokens), 0) AS output_tokens, COALESCE(SUM(total_tokens), 0) AS total_tokens, COALESCE(SUM(total_cost_usd), 0) AS total_cost_usd").
-		Where("tenant_id = ? AND year_month >= ? AND year_month <= ?", tenantID, startMonth, endMonth).
-		Group("year_month, provider_name").
+		Select("`year_month`, provider_name, COUNT(*) AS calls, COALESCE(SUM(input_tokens), 0) AS input_tokens, COALESCE(SUM(output_tokens), 0) AS output_tokens, COALESCE(SUM(total_tokens), 0) AS total_tokens, COALESCE(SUM(total_cost_usd), 0) AS total_cost_usd").
+		Where("tenant_id = ? AND `year_month` >= ? AND `year_month` <= ?", tenantID, startMonth, endMonth).
+		Group("`year_month`, provider_name").
 		Find(&rows).Error
 
 	byMonth := make(map[string]*MonthlyTokenCostPoint)
@@ -1339,7 +1371,7 @@ func (s *TokenAnalyticsService) buildAvailableFilters(ctx context.Context, db *g
 		selectedMonth:                           {},
 	}
 	var dbMonths []string
-	_ = db.WithContext(ctx).Model(&entity.LLMUsageLog{}).Where("tenant_id = ?", tenantID).Distinct("year_month").Pluck("year_month", &dbMonths).Error
+	_ = db.WithContext(ctx).Model(&entity.LLMUsageLog{}).Where("tenant_id = ?", tenantID).Distinct("`year_month`").Pluck("`year_month`", &dbMonths).Error
 	for _, m := range dbMonths {
 		if m != "" {
 			monthSet[m] = struct{}{}
@@ -1388,7 +1420,7 @@ func (s *TokenAnalyticsService) ListUsageLogs(ctx context.Context, db *gorm.DB, 
 
 	q := db.WithContext(ctx).Model(&entity.LLMUsageLog{}).Where("tenant_id = ?", tenantID)
 	if filter.Month != "" && !strings.EqualFold(filter.Month, "all") {
-		q = q.Where("year_month = ?", strings.TrimSpace(filter.Month))
+		q = q.Where("`year_month` = ?", strings.TrimSpace(filter.Month))
 	}
 	if filter.FromDate != "" && filter.ToDate != "" {
 		q = q.Where("stat_date >= ? AND stat_date <= ?", filter.FromDate[:10], filter.ToDate[:10])

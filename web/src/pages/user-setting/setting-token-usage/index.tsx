@@ -294,7 +294,7 @@ const TokenCostDashboardPage: React.FC = () => {
       if (appTypeFilter !== 'all') params.set('app_type', appTypeFilter);
 
       const { data: res } = await request.get(
-        `/v1/system/token-usage/dashboard?${params.toString()}`,
+        `/api/v1/system/token-usage/dashboard?${params.toString()}`,
       );
       if (res?.code === 0 && res?.data) {
         setDashboard(res.data);
@@ -317,7 +317,7 @@ const TokenCostDashboardPage: React.FC = () => {
       params.set('page_size', '50');
 
       const { data: res } = await request.get(
-        `/v1/system/token-usage/logs?${params.toString()}`,
+        `/api/v1/system/token-usage/logs?${params.toString()}`,
       );
       if (res?.code === 0 && res?.data) {
         setLogs(res.data.items || []);
@@ -330,7 +330,9 @@ const TokenCostDashboardPage: React.FC = () => {
 
   const fetchPricingConfig = useCallback(async () => {
     try {
-      const { data: res } = await request.get('/v1/system/token-usage/pricing');
+      const { data: res } = await request.get(
+        '/api/v1/system/token-usage/pricing',
+      );
       if (res?.code === 0 && res?.data) {
         setPricingEntries(res.data.pricing_list || []);
         if (res.data.global_budget) {
@@ -382,10 +384,15 @@ const TokenCostDashboardPage: React.FC = () => {
   const handleSaveBudget = async () => {
     setSavingConfig(true);
     try {
-      const { data: res } = await request.put('/v1/system/token-usage/budget', {
-        provider_name: 'ALL',
-        ...budgetForm,
-      });
+      const { data: res } = await request.put(
+        '/api/v1/system/token-usage/budget',
+        {
+          data: {
+            provider_name: 'ALL',
+            ...budgetForm,
+          },
+        },
+      );
       if (res?.code === 0) {
         message.success('Đã lưu cấu hình hạn mức ngân sách tháng');
         fetchDashboard();
@@ -403,8 +410,10 @@ const TokenCostDashboardPage: React.FC = () => {
     setSavingConfig(true);
     try {
       const { data: res } = await request.put(
-        '/v1/system/token-usage/pricing',
-        priceForm,
+        '/api/v1/system/token-usage/pricing',
+        {
+          data: priceForm,
+        },
       );
       if (res?.code === 0) {
         message.success(

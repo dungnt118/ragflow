@@ -231,11 +231,15 @@ func (s *ChatPipelineService) AsyncChat(
 	common.Info("AsyncChat started", zap.String("chat_id", chat.ID))
 	if chat != nil {
 		sessionID, _ := kwargs["session_id"].(string)
+		chatName := ""
+		if chat.Name != nil {
+			chatName = *chat.Name
+		}
 		ctx = common.WithModelUsageMeta(ctx, common.ModelUsageMeta{
 			TenantID:  chat.TenantID,
 			UserID:    userID,
 			AppID:     chat.ID,
-			AppName:   chat.Name,
+			AppName:   chatName,
 			AppType:   "chat",
 			SessionID: sessionID,
 		})

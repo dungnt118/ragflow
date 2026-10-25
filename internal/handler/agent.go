@@ -309,6 +309,34 @@ func (h *AgentHandler) CreateAgent(c *gin.Context) {
 	common.SuccessWithData(c, row, "success")
 }
 
+// GenerateAgentByAI synthesizes a complete Agent Workflow or Dataflow Pipeline DSL from a prompt,
+// and optionally creates the canvas directly when auto_create is true.
+// @Summary Generate Agent or Pipeline by AI Brain
+// @Tags agents
+// @Accept json
+// @Produce json
+// @Param request body service.GenerateAgentByAIRequest true "AI agent generation request"
+// @Success 200 {object} service.GenerateAgentByAIResponse
+// @Router /api/v1/agents/generate-by-ai [post]
+func (h *AgentHandler) GenerateAgentByAI(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+	var req service.GenerateAgentByAIRequest
+	if err := decodeJSONWithNumber(c.Request.Body, &req); err != nil && !errors.Is(err, io.EOF) {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
+		return
+	}
+	resp, code, err := h.agentService.GenerateAgentByAI(c.Request.Context(), user.ID, &req)
+	if err != nil {
+		common.ErrorWithCode(c, code, err.Error())
+		return
+	}
+	common.SuccessWithData(c, resp, "success")
+}
+
 // GetAgent returns one canvas by ID.
 // @Summary Get Agent
 // @Tags agents

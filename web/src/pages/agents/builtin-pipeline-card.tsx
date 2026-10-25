@@ -10,6 +10,7 @@ import { IBuiltinPipelineListItem } from '@/interfaces/database/agent';
 import { Copy } from 'lucide-react';
 import type { MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { resolveBuiltinPipelineText } from './builtin-pipeline-list';
 import { useCopyBuiltinPipeline } from './use-copy-builtin-pipeline';
 
 // BuiltinPipelineCard renders a read-only built-in ingestion pipeline in the
@@ -21,21 +22,32 @@ export function BuiltinPipelineCard({
 }: {
   data: IBuiltinPipelineListItem;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { copy, copying } = useCopyBuiltinPipeline();
   const { navigateToBuiltinPipeline } = useNavigatePage();
 
+  const resolvedTitle = resolveBuiltinPipelineText(
+    data.titles,
+    data.title,
+    i18n.language,
+  );
+  const resolvedDescription = resolveBuiltinPipelineText(
+    data.descriptions,
+    data.description,
+    i18n.language,
+  );
+
   const handleCopyClick = (e: MouseEvent) => {
     e.stopPropagation();
-    copy({ id: data.id, title: data.title ?? '' });
+    copy({ id: data.id, title: resolvedTitle || data.title || '' });
   };
 
   return (
     <HomeCard
       testId="builtin-pipeline-card"
       data={{
-        name: data.title ?? '',
-        description: data.description || '',
+        name: resolvedTitle,
+        description: resolvedDescription,
       }}
       // Read-only: clicking opens the built-in pipeline on the view-only
       // canvas; the template itself can never be edited.

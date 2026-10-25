@@ -3867,6 +3867,33 @@ Important structured information may include: names, dates, locations, events, k
       conversationDetail: 'Conversation detail',
       user: 'User',
       assistant: 'Assistant',
+      createByAI: 'Create with AI (AI Brain)',
+      createByAITitle: 'AI Brain Architect — Generate Agent & Pipeline from Prompt',
+      createByAIDescription:
+        'Describe your business workflow or document ingestion needs in natural language. AI Brain will select the optimal RAGFlow Action Nodes, configure prompts & parameters, and lay out a ready-to-run canvas.',
+      aiPromptLabel: 'Describe the agent workflow or ingestion pipeline you want to build',
+      aiPromptPlaceholder:
+        'E.g., Build a customer support agent that classifies incoming questions into Technical Support vs Billing Complaints. For technical questions, retrieve from our knowledge base and answer; for complaints, send an alert email...',
+      aiPromptRequired: 'Please describe your requirement (at least 10 characters)',
+      aiCategoryLabel: 'Target Flow Category',
+      aiCategoryAuto: 'Auto-detect (Recommended)',
+      aiCategoryAgent: 'Agent Workflow (Conversational / Multi-tool / Automation)',
+      aiCategoryDataflow: 'Ingestion Pipeline (Parse, Chunk & Enrich Datasets)',
+      aiQuickPromptsLabel: 'Quick Scenario Templates (Click to fill)',
+      aiGeneratePreviewBtn: 'Analyze & Preview Architecture',
+      aiDirectCreateBtn: 'Create & Open Now (1-Click)',
+      aiGeneratingText: 'AI Brain is designing node topology & DSL configuration...',
+      aiCreatingText: 'Creating and opening canvas...',
+      aiPreviewSectionTitle: 'Architecture Proposed by AI Brain',
+      aiPreviewNodesCount: '{{count}} Action Nodes auto-configured',
+      aiFallbackNotice:
+        'Generated using the deterministic Rule-based Smart Synthesizer because no active LLM was available or the model timed out.',
+      aiConfirmCreateBtn: 'Create & Open in Canvas',
+      aiReGenerateBtn: 'Re-analyze',
+      aiModelOptionalHint:
+        'Optional: Select a preferred LLM for reasoning nodes (leave blank to use your tenant default chat model).',
+      aiDatasetOptionalHint:
+        'Optional: Pre-bind Knowledge Datasets if your workflow retrieves internal documents.',
     },
     llmTools: {
       bad_calculator: {

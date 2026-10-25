@@ -353,6 +353,7 @@ export default {
   listAgentTags: `${restAPIv1}/agents/tags`,
   updateAgentTags: (agentId: string) => `${restAPIv1}/agents/${agentId}/tags`,
   createAgent: `${restAPIv1}/agents`,
+  generateAgentByAI: `${restAPIv1}/agents/generate-by-ai`,
   updateAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
   deleteAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
   agentChatCompletion: `${restAPIv1}/agents/chat/completions`,

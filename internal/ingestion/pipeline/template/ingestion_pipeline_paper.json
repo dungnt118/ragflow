@@ -2,11 +2,13 @@
     "id": 32,
     "title": {
         "en": "Paper",
+        "vi": "Bài báo Khoa học (Paper)",
         "de": "Wissenschaftliche Arbeit",
         "zh": "论文"
     },
     "description": {
-        "en": "This template segments parsed files by paper structure. Best for documents with clearly defined sections, such as scholarly works, conference articles, and research studies.",
+        "en": "This template segments parsed files by academic paper structure (Abstract, Introduction, Methodology, Experiments, References) with multi-column PDF layout awareness. Use cases: Scientific papers, conference articles, R&D technical whitepapers, clinical studies, and theses.",
+        "vi": "Nhận diện bố cục bài báo học thuật (Tóm tắt, Giới thiệu, Phương pháp, Thực nghiệm, Tài liệu tham khảo) và xử lý thông minh PDF hai cột, công thức, biểu đồ. Tình huống sử dụng: Công bố khoa học, bài báo hội nghị, luận văn, báo cáo R&D chuyên sâu và sách trắng công nghệ (Whitepaper).",
         "de": "Diese Vorlage segmentiert die geparste Datei anhand der Struktur einer wissenschaftlichen Arbeit. Sie eignet sich für Dokumente mit klar definierten Abschnitten, wie wissenschaftliche Aufsätze, Forschungsartikel, Konferenzbeiträge und technische Studien.",
         "zh": "此模板将解析后的文件按论文结构进行切片，适用于具有清晰章节和学术结构的文档类型，如学术论文、研究文章、会议论文和技术研究报告。"
     },

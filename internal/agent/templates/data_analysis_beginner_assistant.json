@@ -2,11 +2,13 @@
   "id": 37,
   "title": {
     "en": "Beginner's data analytics assistant",
+    "vi": "Trợ lý Phân tích Dữ liệu & Trực quan hóa",
     "de": "Datenanalyse-Assistent für Einsteiger",
     "zh": "数据分析入门助手"
   },
   "description": {
     "en": "A beginner-friendly data analysis assistant that guides you through exploring datasets step-by-step, automatically generating code and visualizations while explaining the logic behind each insight. ",
+    "vi": "Trợ lý hướng dẫn khám phá và phân tích dữ liệu từng bước: tự động sinh mã xử lý dữ liệu, tạo biểu đồ trực quan hóa và giải thích cặn kẽ ý nghĩa thống kê đằng sau từng con số. Tình huống sử dụng: Phân tích bảng số liệu kinh doanh, kiểm định giả thuyết dữ liệu cho người mới bắt đầu hoặc chuyên viên nghiệp vụ.",
     "de": "Ein anfängerfreundlicher Datenanalyse-Assistent, der Sie Schritt für Schritt durch die Erkundung von Datensätzen führt, automatisch Code und Visualisierungen erstellt und die Logik hinter jedem Einblick erklärt.",
     "zh": "一个面向初学者的数据分析助手，指导您逐步探索数据集，自动生成代码和可视化，同时解释每个洞察背后的逻辑。"
   },

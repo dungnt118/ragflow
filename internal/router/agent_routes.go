@@ -47,6 +47,7 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 	// Agent CRUD.
 	g.GET("", h.ListAgents)
 	g.POST("", h.CreateAgent)
+	g.POST("/generate-by-ai", h.GenerateAgentByAI)
 	g.GET("/:canvas_id", h.GetAgent)
 	g.PUT("/:canvas_id", h.UpdateAgent)
 	g.DELETE("/:canvas_id", h.DeleteAgent)

@@ -26,6 +26,7 @@ import dayjs from 'dayjs';
 
 const {
   createAgent,
+  generateAgentByAI,
   updateAgent: updateAgentApi,
   listAgents,
   deleteAgent,
@@ -54,6 +55,10 @@ const methods = {
   },
   createAgent: {
     url: createAgent,
+    method: 'post',
+  },
+  generateAgentByAI: {
+    url: generateAgentByAI,
     method: 'post',
   },
   fetchVersionList: {

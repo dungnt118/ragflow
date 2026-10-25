@@ -36,9 +36,35 @@ export function shouldShowBuiltinForRaw(
   return false;
 }
 
+// Resolves the best localized text from a built-in pipeline's multilingual map,
+// falling back to the primary English text when the requested language is absent.
+export function resolveBuiltinPipelineText(
+  localizedMap?: Record<string, string>,
+  fallbackText?: string,
+  lang?: string,
+): string {
+  const normalizedLang = (lang || 'en').toLowerCase();
+  const langKey = normalizedLang.startsWith('vi')
+    ? 'vi'
+    : normalizedLang.startsWith('zh')
+      ? 'zh'
+      : normalizedLang.startsWith('de')
+        ? 'de'
+        : 'en';
+  if (localizedMap) {
+    if (localizedMap[langKey] && localizedMap[langKey].trim() !== '') {
+      return localizedMap[langKey];
+    }
+    if (localizedMap.en && localizedMap.en.trim() !== '') {
+      return localizedMap.en;
+    }
+  }
+  return fallbackText ?? '';
+}
+
 // Filters built-in pipelines by a case-insensitive keyword over title and
-// description. An empty/whitespace/undefined keyword returns the list
-// unchanged.
+// description (including localized titles and descriptions). An empty/whitespace/undefined
+// keyword returns the list unchanged.
 export function filterBuiltinByKeyword(
   items: IBuiltinPipeline[],
   keywords?: string,
@@ -50,7 +76,22 @@ export function filterBuiltinByKeyword(
   return items.filter((item) => {
     const title = (item.title ?? '').toLowerCase();
     const description = (item.description ?? '').toLowerCase();
-    return title.includes(kw) || description.includes(kw);
+    if (title.includes(kw) || description.includes(kw)) {
+      return true;
+    }
+    const localizedTitles = Object.values(item.titles ?? {});
+    if (localizedTitles.some((val) => (val ?? '').toLowerCase().includes(kw))) {
+      return true;
+    }
+    const localizedDescriptions = Object.values(item.descriptions ?? {});
+    if (
+      localizedDescriptions.some((val) =>
+        (val ?? '').toLowerCase().includes(kw),
+      )
+    ) {
+      return true;
+    }
+    return false;
   });
 }
 

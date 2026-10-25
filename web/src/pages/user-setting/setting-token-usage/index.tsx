@@ -241,6 +241,7 @@ const TokenCostDashboardPage: React.FC = () => {
   const [appTypeFilter, setAppTypeFilter] = useState<string>('all');
   const [currency, setCurrency] = useState<'USD' | 'VND'>('USD');
   const [chartMode, setChartMode] = useState<'daily' | 'monthly'>('daily');
+  const [chartScaleMode, setChartScaleMode] = useState<'detail' | 'budget'>('detail');
   const [activeTab, setActiveTab] = useState<
     'providers' | 'models' | 'apps' | 'logs'
   >('providers');
@@ -503,19 +504,23 @@ const TokenCostDashboardPage: React.FC = () => {
     }
 
     const budgetUSD = kpi && kpi.monthly_budget_usd > 0 ? kpi.monthly_budget_usd : 0;
-    let maxY = Math.max(maxActualOrForecast * 1.25, 0.01);
+    let maxY = 0.05;
 
-    // If budget is defined:
-    // If usage is still very small compared to budget (e.g. usage < 30% budget),
-    // cap the chart's upper scale so the usage curves remain clearly visible and don't flatten to zero,
-    // while clamping or pinning the budget line cleanly.
-    if (budgetUSD > 0) {
-      if (maxActualOrForecast < budgetUSD * 0.4) {
-        // Zoom in so the curves are tall and readable
-        maxY = Math.max(maxActualOrForecast * 2.2, budgetUSD * 0.15, 0.05);
-      } else {
-        maxY = Math.max(maxY, budgetUSD * 1.12);
-      }
+    if (chartScaleMode === 'budget' && budgetUSD > 0) {
+      // In budget overview mode: full scale to accommodate budget with 10% headroom
+      maxY = Math.max(budgetUSD * 1.1, maxActualOrForecast * 1.25);
+    } else {
+      // In detail zoom mode: tightly frame actual & forecast curves so they are tall, clear and detailed
+      const rawMax = Math.max(maxActualOrForecast * 1.35, 0.02);
+      if (rawMax < 0.05) maxY = 0.05;
+      else if (rawMax < 0.1) maxY = 0.1;
+      else if (rawMax < 0.25) maxY = 0.25;
+      else if (rawMax < 0.5) maxY = 0.5;
+      else if (rawMax < 1) maxY = 1.0;
+      else if (rawMax < 2) maxY = 2.0;
+      else if (rawMax < 5) maxY = 5.0;
+      else if (rawMax < 10) maxY = 10.0;
+      else maxY = Math.ceil(rawMax / 5) * 5;
     }
 
     const xForIndex = (idx: number) => {
@@ -554,9 +559,9 @@ const TokenCostDashboardPage: React.FC = () => {
     if (budgetUSD > 0) {
       if (budgetUSD <= maxY) {
         budgetY = yForVal(budgetUSD);
+        isBudgetOffChart = false;
       } else {
-        // Budget is higher than the current zoomed Y scale
-        budgetY = padTop;
+        budgetY = null;
         isBudgetOffChart = true;
       }
     }
@@ -573,6 +578,7 @@ const TokenCostDashboardPage: React.FC = () => {
       maxY,
       budgetUSD,
       isBudgetOffChart,
+      chartScaleMode,
       actualPolyline: actualPoints.join(' '),
       forecastPolyline: forecastPoints.join(' '),
       p90Polyline: p90Points.join(' '),
@@ -580,7 +586,7 @@ const TokenCostDashboardPage: React.FC = () => {
       xForIndex,
       yForVal,
     };
-  }, [dailySeries, kpi]);
+  }, [dailySeries, kpi, chartScaleMode]);
 
   const apiCurlSnippet = useMemo(() => {
     const origin =
@@ -1105,29 +1111,59 @@ const TokenCostDashboardPage: React.FC = () => {
                 phóng EWMA đến cuối tháng & P90
               </p>
             </div>
-            <div className="inline-flex rounded-md border border-border-button bg-bg-input p-0.5">
-              <button
-                type="button"
-                onClick={() => setChartMode('daily')}
-                className={`px-2.5 py-1 text-xs rounded ${
-                  chartMode === 'daily'
-                    ? 'bg-bg-card text-text-primary font-medium'
-                    : 'text-text-secondary'
-                }`}
-              >
-                Theo Ngày ({selectedMonth})
-              </button>
-              <button
-                type="button"
-                onClick={() => setChartMode('monthly')}
-                className={`px-2.5 py-1 text-xs rounded ${
-                  chartMode === 'monthly'
-                    ? 'bg-bg-card text-text-primary font-medium'
-                    : 'text-text-secondary'
-                }`}
-              >
-                Xu hướng 6 Tháng & Tháng tới
-              </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {chartMode === 'daily' && svgChart && svgChart.budgetUSD > 0 && (
+                <div className="inline-flex rounded-md border border-border-button bg-bg-input p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setChartScaleMode('detail')}
+                    className={`px-2.5 py-1 text-xs rounded transition-colors ${
+                      chartScaleMode === 'detail'
+                        ? 'bg-bg-card text-emerald-400 font-semibold shadow-sm'
+                        : 'text-text-secondary hover:text-text-primary'
+                    }`}
+                    title="Thu phóng chi tiết để thấy rõ biến động của chi phí thực tế và đường cong dự báo"
+                  >
+                    🔍 Phóng to chi tiết
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setChartScaleMode('budget')}
+                    className={`px-2.5 py-1 text-xs rounded transition-colors ${
+                      chartScaleMode === 'budget'
+                        ? 'bg-bg-card text-red-400 font-semibold shadow-sm'
+                        : 'text-text-secondary hover:text-text-primary'
+                    }`}
+                    title="Hiển thị toàn cảnh trần ngân sách"
+                  >
+                    📊 Toàn cảnh ngân sách
+                  </button>
+                </div>
+              )}
+              <div className="inline-flex rounded-md border border-border-button bg-bg-input p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setChartMode('daily')}
+                  className={`px-2.5 py-1 text-xs rounded ${
+                    chartMode === 'daily'
+                      ? 'bg-bg-card text-text-primary font-medium'
+                      : 'text-text-secondary'
+                  }`}
+                >
+                  Theo Ngày ({selectedMonth})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChartMode('monthly')}
+                  className={`px-2.5 py-1 text-xs rounded ${
+                    chartMode === 'monthly'
+                      ? 'bg-bg-card text-text-primary font-medium'
+                      : 'text-text-secondary'
+                  }`}
+                >
+                  Xu hướng 6 Tháng & Tháng tới
+                </button>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -1179,7 +1215,7 @@ const TokenCostDashboardPage: React.FC = () => {
                     );
                   })}
 
-                  {/* Budget Limit Line & Badge */}
+                  {/* Budget Limit Line & Badge (Rendered when within range or in Budget mode) */}
                   {svgChart.budgetY !== null && (
                     <g>
                       <line
@@ -1188,29 +1224,55 @@ const TokenCostDashboardPage: React.FC = () => {
                         x2={svgChart.width - svgChart.padRight}
                         y2={svgChart.budgetY}
                         stroke="#ef4444"
-                        strokeWidth="2"
+                        strokeWidth="2.5"
                         strokeDasharray="8 5"
                       />
                       {/* Pill Badge for Budget Label */}
                       <rect
-                        x={svgChart.width - svgChart.padRight - 215}
+                        x={svgChart.width - svgChart.padRight - 225}
                         y={svgChart.budgetY - 24}
-                        width="215"
+                        width="225"
                         height="20"
                         rx="4"
                         fill="#ef4444"
-                        fillOpacity="0.2"
+                        fillOpacity="0.22"
                         stroke="#ef4444"
-                        strokeWidth="1"
+                        strokeWidth="1.2"
                       />
                       <text
                         x={svgChart.width - svgChart.padRight - 10}
                         y={svgChart.budgetY - 10}
                         textAnchor="end"
                         fill="#f87171"
-                        className="text-[11px] font-semibold tracking-wide"
+                        className="text-[12px] font-bold tracking-wide"
                       >
-                        {svgChart.isBudgetOffChart ? '▲ ' : ''}Trần ngân sách ({formatMoney(svgChart.budgetUSD, 2)})
+                        Trần ngân sách ({formatMoney(svgChart.budgetUSD, 2)})
+                      </text>
+                    </g>
+                  )}
+
+                  {/* Off-chart Budget Indicator Badge in Detail Zoom Mode */}
+                  {svgChart.isBudgetOffChart && (
+                    <g>
+                      <rect
+                        x={svgChart.width - svgChart.padRight - 280}
+                        y={svgChart.padTop - 28}
+                        width="280"
+                        height="22"
+                        rx="4"
+                        fill="#ef4444"
+                        fillOpacity="0.16"
+                        stroke="#ef4444"
+                        strokeWidth="1"
+                      />
+                      <text
+                        x={svgChart.width - svgChart.padRight - 10}
+                        y={svgChart.padTop - 13}
+                        textAnchor="end"
+                        fill="#f87171"
+                        className="text-[11px] font-semibold"
+                      >
+                        ▲ Trần ngân sách: {formatMoney(svgChart.budgetUSD, 2)} (Dùng {(kpi?.budget_utilization_pct || 0).toFixed(1)}%)
                       </text>
                     </g>
                   )}
@@ -1258,13 +1320,12 @@ const TokenCostDashboardPage: React.FC = () => {
                     strokeWidth="1.2"
                   />
 
-                  {/* X-Axis Day Labels */}
+                  {/* X-Axis Day Labels (with anti-collision for day 30 & day 31) */}
                   {dailySeries.map((pt, idx) => {
-                    if (
-                      idx !== 0 &&
-                      idx !== dailySeries.length - 1 &&
-                      pt.day_of_month % 5 !== 0
-                    ) {
+                    const isFirst = idx === 0;
+                    const isLast = idx === dailySeries.length - 1;
+                    const isNearEnd = idx >= dailySeries.length - 2;
+                    if (!isFirst && !isLast && (pt.day_of_month % 5 !== 0 || isNearEnd)) {
                       return null;
                     }
                     const x = svgChart.xForIndex(idx);

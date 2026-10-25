@@ -1,10 +1,10 @@
 import MessageItem from '@/components/next-message-item';
 import { Modal } from '@/components/ui/modal/modal';
-import { useFetchAgent } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IAgentLogMessage } from '@/interfaces/database/agent';
 import {
   Docagg,
+  IFeedbackConfig,
   IMessage,
   IReferenceChunk,
   IReferenceObject,
@@ -18,6 +18,8 @@ interface CustomModalProps {
   onClose: () => void;
   message: IAgentLogMessage[];
   reference: IReferenceObject;
+  feedbackConfig?: IFeedbackConfig;
+  title?: string;
 }
 
 interface IAgentLogReferenceChunk {
@@ -87,11 +89,13 @@ export const AgentLogDetailModal: React.FC<CustomModalProps> = ({
   isOpen,
   onClose,
   message: derivedMessages,
+  feedbackConfig,
+  title,
 }) => {
   const { data: userInfo } = useFetchUserInfo();
-  const { data: canvasInfo } = useFetchAgent();
 
   const shortMessage = useMemo(() => {
+    if (title) return title;
     if (derivedMessages?.length) {
       const content = derivedMessages[0]?.content || '';
 
@@ -111,7 +115,7 @@ export const AgentLogDetailModal: React.FC<CustomModalProps> = ({
     } else {
       return '';
     }
-  }, [derivedMessages]);
+  }, [derivedMessages, title]);
 
   return (
     <Modal
@@ -133,12 +137,12 @@ export const AgentLogDetailModal: React.FC<CustomModalProps> = ({
                 )}
                 nickname={userInfo.nickname}
                 avatar={userInfo.avatar}
-                avatarDialog={canvasInfo.avatar}
                 item={message as IMessage}
                 reference={buildReferenceObject(msg.reference)}
                 index={i}
                 showLikeButton={false}
                 showLog={false}
+                feedbackConfig={feedbackConfig}
               ></MessageItem>
             );
           })}

@@ -26,6 +26,7 @@ import (
 	"strconv"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"ragflow/internal/entity"
 )
@@ -49,13 +50,17 @@ type conversationHistoryRow struct {
 // ConversationHistoryUpdate changes only the addressed turn, never synchronizing
 // historical payloads. QuestionID places an answer in its question's reserved slot.
 type ConversationHistoryUpdate struct {
-	Message           map[string]interface{}
-	QuestionID        string
-	Reference         map[string]interface{}
-	AppendReference   bool
-	DeleteMessageID   string
-	FeedbackMessageID string
-	Feedback          map[string]interface{}
+	Message             map[string]interface{}
+	QuestionID          string
+	Reference           map[string]interface{}
+	AppendReference     bool
+	DeleteMessageID     string
+	FeedbackMessageID   string
+	Feedback            map[string]interface{}
+	FeedbackDetail      *entity.FeedbackDetailPayload
+	ClearFeedbackDetail bool
+	ShouldFireTrigger   *bool
+	ThumbUpDelta        *int
 }
 
 func historyReferenceQuery(ctx context.Context, db *gorm.DB, messageTable, referenceTable, conversationID string, messagePosition int) (*gorm.DB, error) {
@@ -113,11 +118,30 @@ func updateConversationHistory(ctx context.Context, db *gorm.DB, messageTable, r
 	if update.FeedbackMessageID != "" {
 		query := db.WithContext(ctx).Table(messageTable).Where("conversation_id = ? AND message_id = ? AND role = ?", conversationID, update.FeedbackMessageID, "assistant")
 		var message entity.ConversationMessage
-		if err := query.Session(&gorm.Session{}).Select("position", "metadata").Order("position").Take(&message).Error; err != nil {
+		if err := query.Session(&gorm.Session{}).Clauses(clause.Locking{Strength: "UPDATE"}).Select("position", "thumb_up", "metadata").Order("position").Take(&message).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil
 			}
 			return err
+		}
+		priorThumb := message.ThumbUp != nil && *message.ThumbUp
+		nextThumb := false
+		if update.Feedback != nil {
+			switch v := update.Feedback["thumb_up"].(type) {
+			case bool:
+				nextThumb = v
+			case *bool:
+				nextThumb = v != nil && *v
+			}
+		}
+		thumbDelta := 0
+		if !priorThumb && nextThumb {
+			thumbDelta = 1
+		} else if priorThumb && !nextThumb {
+			thumbDelta = -1
+		}
+		if update.ThumbUpDelta != nil {
+			*update.ThumbUpDelta = thumbDelta
 		}
 		metadata := make(map[string]json.RawMessage)
 		if message.Metadata != "" {
@@ -128,7 +152,14 @@ func updateConversationHistory(ctx context.Context, db *gorm.DB, messageTable, r
 		if metadata == nil {
 			metadata = make(map[string]json.RawMessage)
 		}
+		var prevDetail entity.FeedbackDetailPayload
+		if rawPrev, ok := metadata["feedback_detail"]; ok && len(rawPrev) > 0 {
+			_ = json.Unmarshal(rawPrev, &prevDetail)
+		}
 		delete(metadata, "thumbup")
+		if update.Feedback == nil {
+			update.Feedback = make(map[string]interface{})
+		}
 		if feedback, ok := update.Feedback["feedback"]; ok {
 			delete(metadata, "feedback")
 			if _, isString := feedback.(string); feedback != nil && !isString {
@@ -139,6 +170,22 @@ func updateConversationHistory(ctx context.Context, db *gorm.DB, messageTable, r
 				metadata["feedback"] = raw
 				update.Feedback["feedback"] = nil
 			}
+		}
+		if update.ClearFeedbackDetail {
+			delete(metadata, "feedback_detail")
+			if update.ShouldFireTrigger != nil {
+				*update.ShouldFireTrigger = false
+			}
+		} else if update.FeedbackDetail != nil {
+			newDigest := update.FeedbackDetail.LastTriggerDigest
+			if update.ShouldFireTrigger != nil {
+				*update.ShouldFireTrigger = newDigest != "" && newDigest != prevDetail.LastTriggerDigest
+			}
+			rawDetail, err := json.Marshal(update.FeedbackDetail)
+			if err != nil {
+				return err
+			}
+			metadata["feedback_detail"] = rawDetail
 		}
 		raw, err := json.Marshal(metadata)
 		if err != nil {
@@ -423,6 +470,11 @@ func hydrateChatSessions(ctx context.Context, db *gorm.DB, sessions []*entity.Ch
 	return nil
 }
 
+// HydrateChatSessionsForAudit loads message and reference history for a slice of ChatSessions.
+func HydrateChatSessionsForAudit(ctx context.Context, db *gorm.DB, sessions []*entity.ChatSession) error {
+	return hydrateChatSessions(ctx, db, sessions)
+}
+
 func hydrateAPIConversations(ctx context.Context, db *gorm.DB, sessions []*entity.API4Conversation) error {
 	ids := make([]string, 0, len(sessions))
 	for _, session := range sessions {
@@ -441,6 +493,11 @@ func hydrateAPIConversations(ctx context.Context, db *gorm.DB, sessions []*entit
 		session.Reference = references[session.ID]
 	}
 	return nil
+}
+
+// HydrateAPIConversationsForAudit loads message and reference history for a slice of API4Conversations.
+func HydrateAPIConversationsForAudit(ctx context.Context, db *gorm.DB, sessions []*entity.API4Conversation) error {
+	return hydrateAPIConversations(ctx, db, sessions)
 }
 
 func deleteHistory(ctx context.Context, db *gorm.DB, tables []string, conversationIDs []string) error {

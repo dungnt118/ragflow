@@ -34,6 +34,7 @@ const ChatContainer = () => {
     value,
     sendLoading,
     derivedMessages,
+    setDerivedMessages,
     hasError,
     stopOutputMessage,
     scrollRef,
@@ -42,6 +43,27 @@ const ChatContainer = () => {
   } = useSendSharedMessage();
   const sendDisabled = useSendButtonDisabled(value);
   const { data: chatInfo } = useFetchExternalChatInfo();
+
+  const sharedSessionId = React.useMemo(() => {
+    const found = derivedMessages?.find((m) => m.session_id || m.conversationId);
+    return found?.session_id || found?.conversationId || '';
+  }, [derivedMessages]);
+
+  const handleFeedbackSuccess = React.useCallback(
+    (
+      messageId: string,
+      patch: {
+        thumbup?: boolean;
+        feedback?: string;
+        feedback_detail?: any;
+      },
+    ) => {
+      setDerivedMessages((prev) =>
+        prev.map((m) => (m.id === messageId ? { ...m, ...patch } : m)),
+      );
+    },
+    [setDerivedMessages],
+  );
 
   const messageReferences = useMessageReferences(derivedMessages, undefined);
 
@@ -90,8 +112,18 @@ const ChatContainer = () => {
                     index={i}
                     isLast={i === derivedMessages.length - 1}
                     clickDocumentButton={clickDocumentButton}
-                    showLikeButton={false}
+                    showLikeButton={
+                      chatInfo?.feedback_config?.enabled !== undefined
+                        ? Boolean(chatInfo.feedback_config.enabled)
+                        : false
+                    }
                     showLoudspeaker={false}
+                    feedbackConfig={chatInfo?.feedback_config}
+                    sessionId={sharedSessionId}
+                    isShared={true}
+                    targetId={conversationId}
+                    channel="widget"
+                    onFeedbackSuccess={handleFeedbackSuccess}
                   ></MessageItem>
                 );
               })}

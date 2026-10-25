@@ -21,6 +21,7 @@ import {
   IReferenceObject,
   UploadResponseDataType,
 } from '@/interfaces/database/chat';
+import { IFeedbackConfig, IFeedbackDetail } from '@/interfaces/request/chat';
 import classNames from 'classnames';
 import {
   PropsWithChildren,
@@ -42,6 +43,7 @@ import { getDirAttribute } from '@/utils/text-direction';
 import { isEmpty } from 'lodash';
 import { Atom, ChevronDown, ChevronUp } from 'lucide-react';
 import { DocumentDownloadButton } from '../document-download-button';
+import { FeedbackSummaryBadge } from '../feedback-summary-badge';
 import { LoadingDots } from '../loading-dots';
 import MarkdownContent from '../next-markdown-content';
 import { RAGFlowAvatar } from '../ragflow-avatar';
@@ -73,6 +75,19 @@ interface IProps
   showLoudspeaker?: boolean;
   showLog?: boolean;
   isShare?: boolean;
+  feedbackConfig?: IFeedbackConfig;
+  sessionId?: string;
+  isAgent?: boolean;
+  targetId?: string;
+  channel?: string;
+  onFeedbackSuccess?: (
+    messageId: string,
+    patch: {
+      thumbup?: boolean;
+      feedback?: string;
+      feedback_detail?: IFeedbackDetail;
+    },
+  ) => void;
 }
 
 function MessageItem({
@@ -96,12 +111,60 @@ function MessageItem({
   showLog,
   isShare,
   nickname,
+  index,
+  feedbackConfig,
+  sessionId,
+  isAgent,
+  targetId,
+  channel,
+  onFeedbackSuccess,
 }: IProps) {
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
   const [showThinking, setShowThinking] = useState(false);
   const { setLastSendLoadingFunc } = useContext(AgentChatContext);
+
+  const [localThumbup, setLocalThumbup] = useState<boolean | undefined>(
+    item.thumbup,
+  );
+  const [localFeedback, setLocalFeedback] = useState<string | undefined>(
+    item.feedback,
+  );
+  const [localDetail, setLocalDetail] = useState<IFeedbackDetail | undefined>(
+    item.feedback_detail,
+  );
+
+  useEffect(() => {
+    setLocalThumbup(item.thumbup);
+  }, [item.thumbup]);
+
+  useEffect(() => {
+    setLocalFeedback(item.feedback);
+  }, [item.feedback]);
+
+  useEffect(() => {
+    setLocalDetail(item.feedback_detail);
+  }, [item.feedback_detail]);
+
+  const handleFeedbackUpdated = useCallback(
+    (
+      msgId: string,
+      patch: {
+        thumbup?: boolean;
+        feedback?: string;
+        feedback_detail?: IFeedbackDetail;
+      },
+    ) => {
+      setLocalThumbup(patch.thumbup);
+      setLocalFeedback(patch.feedback);
+      if (patch.feedback_detail) {
+        setLocalDetail(patch.feedback_detail);
+      }
+      onFeedbackSuccess?.(msgId, patch);
+    },
+    [onFeedbackSuccess],
+  );
 
   useEffect(() => {
     if (typeof setLastSendLoadingFunc === 'function') {
@@ -250,6 +313,17 @@ function MessageItem({
                         showLog={showLog}
                         attachment={item.attachment}
                         isShare={isShare}
+                        thumbup={localThumbup}
+                        feedback={localFeedback}
+                        feedbackDetail={localDetail}
+                        feedbackConfig={feedbackConfig}
+                        sessionId={
+                          sessionId || item.session_id || item.conversationId
+                        }
+                        isAgent={isAgent}
+                        targetId={targetId || conversationId}
+                        channel={channel}
+                        onFeedbackSuccess={handleFeedbackUpdated}
                       ></AssistantGroupButton>
                     )}
                     {!isShare && (
@@ -262,6 +336,17 @@ function MessageItem({
                         showLoudspeaker={showLoudspeaker}
                         showLog={showLog}
                         attachment={item.attachment}
+                        thumbup={localThumbup}
+                        feedback={localFeedback}
+                        feedbackDetail={localDetail}
+                        feedbackConfig={feedbackConfig}
+                        sessionId={
+                          sessionId || item.session_id || item.conversationId
+                        }
+                        isAgent={isAgent}
+                        targetId={targetId || conversationId}
+                        channel={channel}
+                        onFeedbackSuccess={handleFeedbackUpdated}
                       ></AssistantGroupButton>
                     )}
                   </>
@@ -296,6 +381,19 @@ function MessageItem({
               )}
 
             {renderContent()}
+
+            {isAssistant &&
+              (index !== 0 ||
+                localThumbup !== undefined ||
+                Boolean(localFeedback) ||
+                Boolean(localDetail)) && (
+                <FeedbackSummaryBadge
+                  thumbup={localThumbup}
+                  feedback={localFeedback}
+                  feedbackDetail={localDetail}
+                  feedbackConfig={feedbackConfig}
+                />
+              )}
 
             {isAssistant && (
               <ReferenceImageList

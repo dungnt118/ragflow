@@ -125,6 +125,9 @@ export const importDsl = (
     path: rawParsed.path ?? seed.path,
     variables: rawParsed.variables ?? seed.variables,
     globals: rawParsed.globals ?? seed.globals,
+    ...(rawParsed.feedback_config
+      ? { feedback_config: rawParsed.feedback_config }
+      : {}),
   } as unknown as DSL;
 };
 

@@ -80,6 +80,7 @@ export enum Routes {
   KnowledgeGraph = '/knowledge-graph',
   Compilation = '/compilation',
   AgentLogPage = '/agent-log-page',
+  ChatLogPage = '/chat-log-page',
   AgentShare = '/agent/share',
   ChatShare = `${Chats}/share`,
   ChatWidget = `${Chats}/widget`,
@@ -366,6 +367,10 @@ const routeConfigOptions = [
   },
   {
     path: `${Routes.AgentLogPage}/:id`,
+    Component: () => import('@/pages/agents/agent-log-page'),
+  },
+  {
+    path: `${Routes.ChatLogPage}/:id`,
     Component: () => import('@/pages/agents/agent-log-page'),
   },
   {

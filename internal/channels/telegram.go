@@ -51,12 +51,13 @@ type telegramAccount struct {
 type telegramChannel struct {
 	account telegramAccount
 
-	mu      sync.Mutex
-	cancel  context.CancelFunc
-	done    chan struct{}
-	handler core.MessageHandler
-	client  *http.Client
-	offset  int64
+	mu              sync.Mutex
+	cancel          context.CancelFunc
+	done            chan struct{}
+	handler         core.MessageHandler
+	callbackHandler core.CallbackHandler
+	client          *http.Client
+	offset          int64
 }
 
 type telegramAPIResponse struct {
@@ -79,12 +80,20 @@ func (e *telegramTransportError) Unwrap() error {
 }
 
 type telegramUpdate struct {
-	UpdateID          int64            `json:"update_id"`
-	Message           *telegramMessage `json:"message"`
-	EditedMessage     *telegramMessage `json:"edited_message"`
-	ChannelPost       *telegramMessage `json:"channel_post"`
-	EditedChannelPost *telegramMessage `json:"edited_channel_post"`
+	UpdateID          int64                  `json:"update_id"`
+	Message           *telegramMessage       `json:"message"`
+	EditedMessage     *telegramMessage       `json:"edited_message"`
+	ChannelPost       *telegramMessage       `json:"channel_post"`
+	EditedChannelPost *telegramMessage       `json:"edited_channel_post"`
+	CallbackQuery     *telegramCallbackQuery `json:"callback_query"`
 	Raw               map[string]any
+}
+
+type telegramCallbackQuery struct {
+	ID      string           `json:"id"`
+	From    *telegramUser    `json:"from"`
+	Message *telegramMessage `json:"message"`
+	Data    string           `json:"data"`
 }
 
 type telegramMessage struct {
@@ -150,6 +159,13 @@ func (c *telegramChannel) SetMessageHandler(handler core.MessageHandler) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.handler = handler
+}
+
+// SetCallbackHandler installs the callback_query handler for inline rating buttons.
+func (c *telegramChannel) SetCallbackHandler(handler core.CallbackHandler) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.callbackHandler = handler
 }
 
 // Start starts Telegram long polling in the background.
@@ -219,10 +235,39 @@ func (c *telegramChannel) Send(ctx context.Context, msg core.OutgoingMessage) er
 			}
 		}
 	}
+	if len(msg.InlineButtons) > 0 {
+		payload["reply_markup"] = map[string]any{
+			"inline_keyboard": buildTelegramInlineKeyboard(msg.InlineButtons),
+		}
+	}
 	if err := c.callAPI(ctx, "sendMessage", payload, nil); err != nil {
 		common.Error("telegram: send failed", err, zap.String("account_id", c.account.AccountID))
 	}
 	return nil
+}
+
+func buildTelegramInlineKeyboard(rows [][]core.InlineButton) [][]map[string]any {
+	keyboard := make([][]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		btnRow := make([]map[string]any, 0, len(row))
+		for _, btn := range row {
+			if btn.Text == "" || btn.CallbackData == "" {
+				continue
+			}
+			cbData := btn.CallbackData
+			if len(cbData) > 64 {
+				cbData = cbData[:64]
+			}
+			btnRow = append(btnRow, map[string]any{
+				"text":          btn.Text,
+				"callback_data": cbData,
+			})
+		}
+		if len(btnRow) > 0 {
+			keyboard = append(keyboard, btnRow)
+		}
+	}
+	return keyboard
 }
 
 // run drops queued updates and consumes Telegram updates until stopped.
@@ -291,6 +336,10 @@ func (c *telegramChannel) getUpdates(ctx context.Context) ([]telegramUpdate, err
 // handleUpdate maps Telegram's effective message into the common channel model.
 // Telegram -> AI
 func (c *telegramChannel) handleUpdate(ctx context.Context, update telegramUpdate) {
+	if update.CallbackQuery != nil {
+		c.handleCallbackUpdate(ctx, update.CallbackQuery)
+		return
+	}
 	msg := update.effectiveMessage()
 	if msg == nil {
 		return
@@ -329,6 +378,57 @@ func (c *telegramChannel) handleUpdate(ctx context.Context, update telegramUpdat
 	}
 	if err := handler(ctx, incoming); err != nil {
 		common.Error("telegram: message handler error", err, zap.String("account_id", c.account.AccountID))
+	}
+}
+
+func (c *telegramChannel) handleCallbackUpdate(ctx context.Context, cb *telegramCallbackQuery) {
+	c.mu.Lock()
+	cbHandler := c.callbackHandler
+	c.mu.Unlock()
+	if cbHandler == nil || cb == nil {
+		return
+	}
+	var chatID, msgID, senderID string
+	if cb.Message != nil {
+		chatID = strconv.FormatInt(cb.Message.Chat.ID, 10)
+		msgID = strconv.FormatInt(cb.Message.MessageID, 10)
+	}
+	if cb.From != nil {
+		senderID = strconv.FormatInt(cb.From.ID, 10)
+	}
+	res, err := cbHandler(ctx, core.CallbackQuery{
+		ID:        cb.ID,
+		Channel:   c.ChannelID(),
+		AccountID: c.account.AccountID,
+		ChatID:    chatID,
+		MessageID: msgID,
+		SenderID:  senderID,
+		Data:      cb.Data,
+	})
+	if err != nil {
+		common.Error("telegram: callback handler error", err, zap.String("account_id", c.account.AccountID))
+		_ = c.callAPI(ctx, "answerCallbackQuery", map[string]any{
+			"callback_query_id": cb.ID,
+			"text":              "Không thể ghi nhận đánh giá lúc này.",
+		}, nil)
+		return
+	}
+	toast := "Đã ghi nhận đánh giá!"
+	if res != nil && res.ToastText != "" {
+		toast = res.ToastText
+	}
+	_ = c.callAPI(ctx, "answerCallbackQuery", map[string]any{
+		"callback_query_id": cb.ID,
+		"text":              toast,
+	}, nil)
+	if res != nil && len(res.InlineButtons) > 0 && cb.Message != nil {
+		_ = c.callAPI(ctx, "editMessageReplyMarkup", map[string]any{
+			"chat_id":    cb.Message.Chat.ID,
+			"message_id": cb.Message.MessageID,
+			"reply_markup": map[string]any{
+				"inline_keyboard": buildTelegramInlineKeyboard(res.InlineButtons),
+			},
+		}, nil)
 	}
 }
 

@@ -18,12 +18,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 
 	"go.uber.org/zap"
 
 	"gorm.io/gorm"
+	"ragflow/internal/channels/core"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -52,6 +54,12 @@ type ChatChannelIncomingMessage struct {
 	MessageID string
 	SenderID  string
 	Text      string
+}
+
+type ChatChannelOutgoingReply struct {
+	Answer        string
+	MessageID     string
+	InlineButtons [][]core.InlineButton
 }
 
 // ChatChannelRuntimeProvider reads runtime metadata for one live chat-channel instance.
@@ -249,32 +257,41 @@ func (s *ChatChannelService) GetChatChannelRuntime(ctx context.Context, userID, 
 
 // HandleIncomingMessage routes one external channel message through the bound RAGFlow dialog.
 func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg ChatChannelIncomingMessage) (string, error) {
+	reply, err := s.HandleIncomingChannelMessage(ctx, msg)
+	if err != nil || reply == nil {
+		return "", err
+	}
+	return reply.Answer, nil
+}
+
+// HandleIncomingChannelMessage routes one external channel message and returns both text and optional inline rating buttons.
+func (s *ChatChannelService) HandleIncomingChannelMessage(ctx context.Context, msg ChatChannelIncomingMessage) (*ChatChannelOutgoingReply, error) {
 	if strings.TrimSpace(msg.Text) == "" {
-		return "", nil
+		return nil, nil
 	}
 
 	channel, err := s.chatChannelDAO.GetByID(ctx, dao.DB, msg.AccountID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return "", nil
+			return nil, nil
 		}
-		return "", err
+		return nil, err
 	}
 	if channel.ChatID == nil || strings.TrimSpace(*channel.ChatID) == "" {
-		return "", nil
+		return nil, nil
 	}
 
 	dialog, err := s.chatDAO.GetByID(ctx, dao.DB, *channel.ChatID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return "", nil
+			return nil, nil
 		}
-		return "", err
+		return nil, err
 	}
 
 	session, err := s.chatSessionSvc.GetOrCreateForChannel(ctx, dialog.ID, channel.ID, msg.ChatID, msg.Text, channel.Name)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	result, err := s.chatSessionSvc.ChatCompletions(
@@ -294,13 +311,169 @@ func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg Chat
 	)
 	if err != nil {
 		common.Error("chat channel completion failed", err, zap.String("channel_id", channel.ID))
-		return "Sorry, I couldn't process your message right now.", nil
+		return &ChatChannelOutgoingReply{Answer: "Sorry, I couldn't process your message right now."}, nil
 	}
 	if result == nil {
-		return "", nil
+		return nil, nil
 	}
 	answer, _ := result["answer"].(string)
-	return answer, nil
+	replyMsgID, _ := result["id"].(string)
+	var inlineButtons [][]core.InlineButton
+	feedbackCfg := entity.ExtractFeedbackConfig(dialog.PromptConfig)
+	if feedbackCfg != nil && feedbackCfg.Enabled && replyMsgID != "" {
+		inlineButtons = BuildTelegramRatingButtons(replyMsgID, feedbackCfg, 0)
+	}
+	return &ChatChannelOutgoingReply{
+		Answer:        answer,
+		MessageID:     replyMsgID,
+		InlineButtons: inlineButtons,
+	}, nil
+}
+
+// BuildTelegramRatingButtons constructs compact inline buttons whose callback_data stays <= 41 bytes (< 64-byte Telegram limit).
+// Format: "fb:<message_id_32>:up", "fb:<message_id_32>:dn", or "fb:<message_id_32>:c<idx>:<val>".
+func BuildTelegramRatingButtons(msgID string, cfg *entity.FeedbackConfig, criterionIdx int) [][]core.InlineButton {
+	if cfg == nil || !cfg.Enabled || msgID == "" {
+		return nil
+	}
+	if cfg.Mode == entity.FeedbackModeMultiCriteria && len(cfg.Criteria) > 0 {
+		if criterionIdx < 0 || criterionIdx >= len(cfg.Criteria) {
+			return nil
+		}
+		crit := cfg.Criteria[criterionIdx]
+		if crit.Type == entity.CriterionTypeBinary {
+			return [][]core.InlineButton{
+				{
+					{Text: fmt.Sprintf("👍 %s: Đúng", crit.Label), CallbackData: fmt.Sprintf("fb:%s:c%d:1", msgID, criterionIdx)},
+					{Text: "👎 Chưa chính xác", CallbackData: fmt.Sprintf("fb:%s:c%d:0", msgID, criterionIdx)},
+				},
+			}
+		}
+		row := make([]core.InlineButton, 0, 5)
+		for score := 1; score <= 5; score++ {
+			row = append(row, core.InlineButton{
+				Text:         fmt.Sprintf("%d⭐", score),
+				CallbackData: fmt.Sprintf("fb:%s:c%d:%d", msgID, criterionIdx, score),
+			})
+		}
+		return [][]core.InlineButton{row}
+	}
+
+	return [][]core.InlineButton{
+		{
+			{Text: "👍 Hữu ích", CallbackData: fmt.Sprintf("fb:%s:up", msgID)},
+			{Text: "👎 Chưa tốt", CallbackData: fmt.Sprintf("fb:%s:dn", msgID)},
+		},
+	}
+}
+
+// HandleCallbackQuery processes an inline rating button tap from Telegram and updates the message feedback state.
+func (s *ChatChannelService) HandleCallbackQuery(ctx context.Context, cb core.CallbackQuery) (*core.CallbackResult, error) {
+	if !strings.HasPrefix(cb.Data, "fb:") {
+		return &core.CallbackResult{ToastText: "Thao tác không hợp lệ."}, nil
+	}
+	parts := strings.Split(cb.Data, ":")
+	if len(parts) < 3 {
+		return &core.CallbackResult{ToastText: "Dữ liệu đánh giá không hợp lệ."}, nil
+	}
+	msgID := parts[1]
+	action := parts[2]
+	if action == "done" {
+		return &core.CallbackResult{ToastText: "Bạn đã hoàn tất đánh giá tin nhắn này."}, nil
+	}
+
+	channel, err := s.chatChannelDAO.GetByID(ctx, dao.DB, cb.AccountID)
+	if err != nil || channel == nil || channel.ChatID == nil || strings.TrimSpace(*channel.ChatID) == "" {
+		return nil, errors.New("chat channel not bound to dialog")
+	}
+	dialog, err := s.chatDAO.GetByID(ctx, dao.DB, *channel.ChatID)
+	if err != nil || dialog == nil {
+		return nil, errors.New("dialog not found")
+	}
+
+	// Deterministic session_id derivation (FND-06) keeps callback_data well under 64 bytes.
+	sessionID := channelSessionID(dialog.ID, channel.ID, cb.ChatID)
+	feedbackCfg := entity.ExtractFeedbackConfig(dialog.PromptConfig)
+
+	if action == "up" || action == "dn" {
+		thumb := action == "up"
+		req := map[string]interface{}{
+			"thumbup": thumb,
+			"channel": "telegram",
+		}
+		if _, _, uErr := s.chatSessionSvc.UpdateMessageFeedback(ctx, dialog.TenantID, dialog.ID, sessionID, msgID, req); uErr != nil {
+			return nil, uErr
+		}
+		label := "✅ Đã đánh giá: 👍 Hữu ích"
+		if !thumb {
+			label = "✅ Đã đánh giá: 👎 Chưa tốt"
+		}
+		return &core.CallbackResult{
+			ToastText: "Cảm ơn đánh giá của bạn!",
+			InlineButtons: [][]core.InlineButton{
+				{{Text: label, CallbackData: fmt.Sprintf("fb:%s:done", msgID)}},
+			},
+		}, nil
+	}
+
+	if strings.HasPrefix(action, "c") && len(parts) >= 4 {
+		idx, idxErr := strconv.Atoi(strings.TrimPrefix(action, "c"))
+		valInt, valErr := strconv.Atoi(parts[3])
+		if idxErr != nil || valErr != nil || feedbackCfg == nil || idx < 0 || idx >= len(feedbackCfg.Criteria) {
+			return &core.CallbackResult{ToastText: "Tiêu chí đánh giá không hợp lệ."}, nil
+		}
+
+		// Load existing criteria if user already completed earlier steps in this message.
+		criteriaMap := make(map[string]interface{})
+		if existingSession, sErr := s.chatSessionSvc.chatSessionDAO.GetByID(ctx, dao.DB, sessionID); sErr == nil && existingSession != nil {
+			for _, m := range parseMessages(existingSession.Message) {
+				if stringValue(m["id"]) == msgID && stringValue(m["role"]) == "assistant" {
+					if detail, ok := m["feedback_detail"].(map[string]interface{}); ok {
+						if prevCrit, ok := detail["criteria"].(map[string]interface{}); ok {
+							for k, v := range prevCrit {
+								criteriaMap[k] = v
+							}
+						}
+					}
+					break
+				}
+			}
+		}
+
+		crit := feedbackCfg.Criteria[idx]
+		if crit.Type == entity.CriterionTypeBinary {
+			criteriaMap[crit.Key] = valInt == 1
+		} else {
+			criteriaMap[crit.Key] = valInt
+		}
+
+		nextIdx := idx + 1
+		req := map[string]interface{}{
+			"criteria":      criteriaMap,
+			"channel":       "telegram",
+			"telegram_step": nextIdx,
+		}
+		if _, _, uErr := s.chatSessionSvc.UpdateMessageFeedback(ctx, dialog.TenantID, dialog.ID, sessionID, msgID, req); uErr != nil {
+			return nil, uErr
+		}
+
+		if nextIdx < len(feedbackCfg.Criteria) {
+			nextCrit := feedbackCfg.Criteria[nextIdx]
+			return &core.CallbackResult{
+				ToastText:     fmt.Sprintf("Đã lưu (%d/%d). Tiếp theo: %s", nextIdx, len(feedbackCfg.Criteria), nextCrit.Label),
+				InlineButtons: BuildTelegramRatingButtons(msgID, feedbackCfg, nextIdx),
+			}, nil
+		}
+
+		return &core.CallbackResult{
+			ToastText: "Cảm ơn bạn đã hoàn tất đánh giá!",
+			InlineButtons: [][]core.InlineButton{
+				{{Text: "✅ Đã ghi nhận đánh giá", CallbackData: fmt.Sprintf("fb:%s:done", msgID)}},
+			},
+		}, nil
+	}
+
+	return &core.CallbackResult{ToastText: "Đã ghi nhận!"}, nil
 }
 
 func (s *ChatChannelService) DeleteChatChannel(ctx context.Context, userID, channelID string) (bool, common.ErrorCode, error) {

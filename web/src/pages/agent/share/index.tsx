@@ -60,9 +60,36 @@ const ChatContainer = () => {
     showParameterDialog,
     sendFormMessage,
     addNewestOneAnswer,
+    setDerivedMessages,
+    streamSessionId,
+    requestedSessionId,
     ok,
     resetSession,
   } = useSendNextSharedMessage(addEventList);
+
+  const sharedSessionId =
+    streamSessionId ||
+    requestedSessionId ||
+    derivedMessages?.find((m) => m.session_id || m.conversationId)?.session_id ||
+    derivedMessages?.find((m) => m.session_id || m.conversationId)
+      ?.conversationId ||
+    '';
+
+  const handleFeedbackSuccess = useCallback(
+    (
+      messageId: string,
+      patch: {
+        thumbup?: boolean;
+        feedback?: string;
+        feedback_detail?: any;
+      },
+    ) => {
+      setDerivedMessages((prev) =>
+        prev.map((m) => (m.id === messageId ? { ...m, ...patch } : m)),
+      );
+    },
+    [setDerivedMessages],
+  );
 
   const { buildInputList, handleOk, isWaiting } = useAwaitComponentData({
     derivedMessages,
@@ -154,10 +181,20 @@ const ChatContainer = () => {
                     agentName={inputsData.title}
                     index={i}
                     clickDocumentButton={clickDocumentButton}
-                    showLikeButton={false}
+                    showLikeButton={
+                      inputsData?.feedback_config?.enabled !== undefined
+                        ? Boolean(inputsData.feedback_config.enabled)
+                        : false
+                    }
                     showLoudspeaker={false}
                     showLog={false}
                     sendLoading={sendLoading}
+                    feedbackConfig={inputsData?.feedback_config}
+                    sessionId={sharedSessionId}
+                    isAgent={true}
+                    targetId={conversationId}
+                    channel="widget"
+                    onFeedbackSuccess={handleFeedbackSuccess}
                   >
                     {message.role === MessageType.Assistant &&
                       derivedMessages.length - 1 === i && (

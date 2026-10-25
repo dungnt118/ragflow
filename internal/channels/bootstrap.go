@@ -260,7 +260,7 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 
 	channelService := service.NewChatChannelService()
 	ch.SetMessageHandler(func(ctx context.Context, msg core.IncomingMessage) error {
-		answer, err := channelService.HandleIncomingMessage(ctx, service.ChatChannelIncomingMessage{
+		reply, err := channelService.HandleIncomingChannelMessage(ctx, service.ChatChannelIncomingMessage{
 			Channel:   msg.Channel,
 			AccountID: msg.AccountID,
 			ChatID:    msg.ChatID,
@@ -269,15 +269,21 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 			SenderID:  msg.SenderID,
 			Text:      msg.Text,
 		})
-		if err != nil || answer == "" {
+		if err != nil || reply == nil || reply.Answer == "" {
 			return err
 		}
 		return ch.Send(ctx, core.OutgoingMessage{
 			ChatID:           msg.ChatID,
-			Text:             answer,
+			Text:             reply.Answer,
 			ReplyToMessageID: msg.MessageID,
+			InlineButtons:    reply.InlineButtons,
 		})
 	})
+	if cbCh, ok := ch.(core.CallbackCapableChannel); ok {
+		cbCh.SetCallbackHandler(func(ctx context.Context, cb core.CallbackQuery) (*core.CallbackResult, error) {
+			return channelService.HandleCallbackQuery(ctx, cb)
+		})
+	}
 	if err = ch.Start(ctx); err != nil {
 		return err
 	}

@@ -151,6 +151,13 @@ export const useNavigatePage = () => {
     [navigate],
   );
 
+  const navigateToChatLogs = useCallback(
+    (id: string) => () => {
+      navigate(`${Routes.ChatLogPage}/${id}`);
+    },
+    [navigate],
+  );
+
   const navigateToAgentTemplates = useCallback(() => {
     navigate(Routes.AgentTemplates);
   }, [navigate]);
@@ -262,6 +269,7 @@ export const useNavigatePage = () => {
     navigateToAgent,
     navigateToAgentExplore,
     navigateToAgentLogs,
+    navigateToChatLogs,
     navigateToAgentTemplates,
     navigateToBuiltinPipeline,
     navigateToSearchList,

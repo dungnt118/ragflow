@@ -31,6 +31,7 @@ export interface ISwitchForm {
 }
 
 import { AgentCategory } from '@/constants/agent';
+import { IFeedbackConfig } from '@/interfaces/request/chat';
 import { Edge, Node } from '@xyflow/react';
 import { IReference, Message } from './chat';
 import { ICompilationTemplateGroup } from './compilation-template';
@@ -49,6 +50,7 @@ export interface DSL {
   globals: Record<string, any>;
   variables: Record<string, GlobalVariableType>;
   retrieval: IReference[];
+  feedback_config?: IFeedbackConfig;
 }
 
 export interface IOperator {

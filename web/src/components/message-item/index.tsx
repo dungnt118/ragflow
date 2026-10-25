@@ -22,11 +22,13 @@ import {
   IReferenceChunk,
   UploadResponseDataType,
 } from '@/interfaces/database/chat';
+import { IFeedbackConfig, IFeedbackDetail } from '@/interfaces/request/chat';
 import { cn } from '@/lib/utils';
 import classNames from 'classnames';
 import { isEmpty } from 'lodash';
-import { memo, useCallback, useMemo } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { DocumentDownloadButton } from '../document-download-button';
+import { FeedbackSummaryBadge } from '../feedback-summary-badge';
 import { LoadingDots } from '../loading-dots';
 import MarkdownContent from '../markdown-content';
 import { ReferenceImageList } from '../next-message-item/reference-image-list';
@@ -53,6 +55,20 @@ interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
   showLikeButton?: boolean;
   showLoudspeaker?: boolean;
   isLast?: boolean;
+  feedbackConfig?: IFeedbackConfig;
+  sessionId?: string;
+  isShared?: boolean;
+  isAgent?: boolean;
+  targetId?: string;
+  channel?: string;
+  onFeedbackSuccess?: (
+    messageId: string,
+    patch: {
+      thumbup?: boolean;
+      feedback?: string;
+      feedback_detail?: IFeedbackDetail;
+    },
+  ) => void;
 }
 
 const MessageItem = ({
@@ -72,10 +88,58 @@ const MessageItem = ({
   visibleAvatar = true,
   nickname,
   isLast = false,
+  feedbackConfig,
+  sessionId,
+  isShared,
+  isAgent,
+  targetId,
+  channel,
+  onFeedbackSuccess,
 }: IProps) => {
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
+
+  const [localThumbup, setLocalThumbup] = useState<boolean | undefined>(
+    item.thumbup,
+  );
+  const [localFeedback, setLocalFeedback] = useState<string | undefined>(
+    item.feedback,
+  );
+  const [localDetail, setLocalDetail] = useState<IFeedbackDetail | undefined>(
+    item.feedback_detail,
+  );
+
+  useEffect(() => {
+    setLocalThumbup(item.thumbup);
+  }, [item.thumbup]);
+
+  useEffect(() => {
+    setLocalFeedback(item.feedback);
+  }, [item.feedback]);
+
+  useEffect(() => {
+    setLocalDetail(item.feedback_detail);
+  }, [item.feedback_detail]);
+
+  const handleFeedbackUpdated = useCallback(
+    (
+      msgId: string,
+      patch: {
+        thumbup?: boolean;
+        feedback?: string;
+        feedback_detail?: IFeedbackDetail;
+      },
+    ) => {
+      setLocalThumbup(patch.thumbup);
+      setLocalFeedback(patch.feedback);
+      if (patch.feedback_detail) {
+        setLocalDetail(patch.feedback_detail);
+      }
+      onFeedbackSuccess?.(msgId, patch);
+    },
+    [onFeedbackSuccess],
+  );
 
   const uploadedFiles = useMemo(() => {
     return item?.files ?? [];
@@ -141,6 +205,16 @@ const MessageItem = ({
                   showLikeButton={showLikeButton}
                   audioBinary={item.audio_binary}
                   showLoudspeaker={showLoudspeaker}
+                  thumbup={localThumbup}
+                  feedback={localFeedback}
+                  feedbackDetail={localDetail}
+                  feedbackConfig={feedbackConfig}
+                  sessionId={sessionId || item.session_id || item.conversationId}
+                  isShared={isShared}
+                  isAgent={isAgent}
+                  targetId={targetId}
+                  channel={channel}
+                  onFeedbackSuccess={handleFeedbackUpdated}
                 ></AssistantGroupButton>
               )
             ) : (
@@ -183,6 +257,14 @@ const MessageItem = ({
                     usage={item.usage}
                     elapsedMs={item.elapsed_ms}
                   ></TurnUsage>
+                )}
+                {isAssistant && index !== 0 && (
+                  <FeedbackSummaryBadge
+                    thumbup={localThumbup}
+                    feedback={localFeedback}
+                    feedbackDetail={localDetail}
+                    feedbackConfig={feedbackConfig}
+                  />
                 )}
               </div>
             )}

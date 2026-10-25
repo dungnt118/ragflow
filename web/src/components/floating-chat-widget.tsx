@@ -15,15 +15,33 @@
  */
 
 import CopyToClipboard from '@/components/copy-to-clipboard';
+import FeedbackDialog from '@/components/feedback-dialog';
+import { FeedbackSummaryBadge } from '@/components/feedback-summary-badge';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType, SharedFrom } from '@/constants/chat';
 import { useFetchExternalAgentInputs } from '@/hooks/use-agent-request';
-import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
+import {
+  useFeedback,
+  useFetchExternalChatInfo,
+} from '@/hooks/use-chat-request';
+import {
+  IFeedbackDetail,
+  IFeedbackRequestBody,
+} from '@/interfaces/request/chat';
+import { cn } from '@/lib/utils';
 import i18n, { changeLanguageAsync } from '@/locales/config';
 import { useSendNextSharedMessage } from '@/pages/agent/hooks/use-send-shared-message';
 import { removeThinkSection } from '@/utils/chat';
-import { MessageCircle, Minimize2, Send, X } from 'lucide-react';
+import {
+  MessageCircle,
+  Minimize2,
+  Send,
+  Star,
+  ThumbsDown,
+  ThumbsUp,
+  X,
+} from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -190,6 +208,212 @@ const FloatingChatWidget = () => {
   const { data } = (
     isFromAgent ? useFetchExternalAgentInputs : useFetchExternalChatInfo
   )();
+
+  const feedbackConfig = data?.feedback_config;
+  const isFeedbackEnabled =
+    feedbackConfig?.enabled !== undefined ? Boolean(feedbackConfig.enabled) : true;
+  const isMultiCriteria =
+    feedbackConfig?.mode === 'multi_criteria' &&
+    Array.isArray(feedbackConfig?.criteria) &&
+    feedbackConfig.criteria.length > 0;
+
+  const setDerivedMessages = (hookResult as any).setDerivedMessages as
+    | React.Dispatch<React.SetStateAction<any[]>>
+    | undefined;
+  const streamSessionId = (hookResult as any).streamSessionId as
+    | string
+    | undefined;
+  const requestedSessionId = (hookResult as any).requestedSessionId as
+    | string
+    | undefined;
+
+  const activeSessionId =
+    streamSessionId ||
+    requestedSessionId ||
+    derivedMessages?.find((m: any) => m.session_id || m.conversationId)
+      ?.session_id ||
+    derivedMessages?.find((m: any) => m.session_id || m.conversationId)
+      ?.conversationId ||
+    '';
+
+  const { feedback: submitFeedback, loading: feedbackLoading } = useFeedback({
+    sessionId: activeSessionId,
+    isShared: true,
+    isAgent: isFromAgent,
+    targetId: conversationId || '',
+    channel: 'widget',
+  });
+
+  const [activeFeedbackMsg, setActiveFeedbackMsg] = useState<{
+    id: string;
+    thumbup?: boolean;
+    feedback?: string;
+    feedback_detail?: IFeedbackDetail;
+  } | null>(null);
+
+  const applyWidgetFeedbackPatch = useCallback(
+    (
+      msgId: string,
+      patch: {
+        thumbup?: boolean;
+        feedback?: string;
+        feedback_detail?: IFeedbackDetail;
+      },
+    ) => {
+      setDerivedMessages?.((prev) =>
+        Array.isArray(prev)
+          ? prev.map((m) => (m.id === msgId ? { ...m, ...patch } : m))
+          : prev,
+      );
+      setDisplayMessages((prev) =>
+        Array.isArray(prev)
+          ? prev.map((m) => (m.id === msgId ? { ...m, ...patch } : m))
+          : prev,
+      );
+    },
+    [setDerivedMessages],
+  );
+
+  const handleWidgetFeedbackSubmit = useCallback(
+    async (params: IFeedbackRequestBody) => {
+      const targetMsgId = params.messageId || activeFeedbackMsg?.id;
+      if (!targetMsgId) return;
+      const ret = await submitFeedback({
+        ...params,
+        messageId: targetMsgId,
+        channel: 'widget',
+      });
+      const code = typeof ret === 'number' ? ret : ret?.code;
+      if (code === 0) {
+        const serverDetail =
+          typeof ret === 'object' ? ret?.data?.feedback_detail : undefined;
+        applyWidgetFeedbackPatch(targetMsgId, {
+          thumbup:
+            typeof ret === 'object' && ret?.data?.thumbup !== undefined
+              ? Boolean(ret.data.thumbup)
+              : params.thumbup,
+          feedback: params.feedback,
+          feedback_detail:
+            serverDetail ||
+            (params.csat_score !== undefined || params.criteria !== undefined
+              ? {
+                  csat_score: params.csat_score,
+                  criteria: params.criteria,
+                  comment: params.feedback,
+                  channel: 'widget',
+                }
+              : undefined),
+        });
+        setActiveFeedbackMsg(null);
+      }
+    },
+    [activeFeedbackMsg?.id, applyWidgetFeedbackPatch, submitFeedback],
+  );
+
+  const renderMessageToolbar = (message: any, index: number) => {
+    const canRate =
+      isFeedbackEnabled &&
+      index > 0 &&
+      Boolean(message.id) &&
+      message.id !== PROLOGUE_MESSAGE_ID;
+
+    return (
+      <div className="space-y-1">
+        <div className="flex items-center justify-end gap-1" role="toolbar">
+          <CopyToClipboard
+            text={removeThinkSection(message.content)}
+            className="border-0"
+            size="icon-xs"
+          />
+          {canRate &&
+            (isMultiCriteria ? (
+              <button
+                type="button"
+                onClick={() =>
+                  setActiveFeedbackMsg({
+                    id: message.id,
+                    thumbup: message.thumbup,
+                    feedback: message.feedback,
+                    feedback_detail: message.feedback_detail,
+                  })
+                }
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors',
+                  message.thumbup === true
+                    ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-600'
+                    : message.thumbup === false
+                      ? 'border-rose-500/50 bg-rose-500/15 text-rose-600'
+                      : 'border-gray-300 text-gray-600 hover:border-gray-400',
+                )}
+              >
+                <Star
+                  className={cn(
+                    'size-3',
+                    message.feedback_detail?.csat_score
+                      ? 'fill-amber-400 text-amber-400'
+                      : '',
+                  )}
+                />
+                <span>
+                  {message.feedback_detail?.csat_score
+                    ? `${message.feedback_detail.csat_score}/5`
+                    : 'Đánh giá'}
+                </span>
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  title="Hài lòng"
+                  onClick={() =>
+                    handleWidgetFeedbackSubmit({
+                      messageId: message.id,
+                      thumbup: true,
+                    })
+                  }
+                  className={cn(
+                    'rounded p-1 transition-colors',
+                    message.thumbup === true
+                      ? 'bg-emerald-500/15 text-emerald-600'
+                      : 'text-gray-500 hover:bg-gray-200/60',
+                  )}
+                >
+                  <ThumbsUp className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  title="Chưa hài lòng"
+                  onClick={() =>
+                    setActiveFeedbackMsg({
+                      id: message.id,
+                      thumbup: false,
+                      feedback: message.feedback,
+                      feedback_detail: message.feedback_detail,
+                    })
+                  }
+                  className={cn(
+                    'rounded p-1 transition-colors',
+                    message.thumbup === false
+                      ? 'bg-rose-500/15 text-rose-600'
+                      : 'text-gray-500 hover:bg-gray-200/60',
+                  )}
+                >
+                  <ThumbsDown className="size-3.5" />
+                </button>
+              </>
+            ))}
+        </div>
+        {index > 0 && (
+          <FeedbackSummaryBadge
+            thumbup={message.thumbup}
+            feedback={message.feedback}
+            feedbackDetail={message.feedback_detail}
+            feedbackConfig={feedbackConfig}
+          />
+        )}
+      </div>
+    );
+  };
 
   // Seed the agent's opening statement. The agent send hook derives the
   // prologue from the agent canvas graph store, which is never populated on
@@ -694,13 +918,7 @@ const FloatingChatWidget = () => {
                           }
                           clickDocumentButton={clickDocumentButton}
                         />
-                        <div className="flex justify-end" role="toolbar">
-                          <CopyToClipboard
-                            text={removeThinkSection(message.content)}
-                            className="border-0"
-                            size="icon-xs"
-                          />
-                        </div>
+                        {renderMessageToolbar(message, index)}
                       </div>
                     )}
                   </div>
@@ -780,6 +998,18 @@ const FloatingChatWidget = () => {
             chunk={selectedChunk}
             width={'100vw'}
             height={'100vh'}
+          />
+        )}
+        {activeFeedbackMsg && (
+          <FeedbackDialog
+            visible={Boolean(activeFeedbackMsg)}
+            hideModal={() => setActiveFeedbackMsg(null)}
+            onOk={handleWidgetFeedbackSubmit}
+            loading={feedbackLoading}
+            feedbackConfig={feedbackConfig}
+            initialFeedback={activeFeedbackMsg.feedback}
+            initialThumbup={activeFeedbackMsg.thumbup}
+            initialDetail={activeFeedbackMsg.feedback_detail}
           />
         )}
       </>
@@ -1012,6 +1242,18 @@ const FloatingChatWidget = () => {
         documentId={documentId}
         chunk={selectedChunk}
       />
+      {activeFeedbackMsg && (
+        <FeedbackDialog
+          visible={Boolean(activeFeedbackMsg)}
+          hideModal={() => setActiveFeedbackMsg(null)}
+          onOk={handleWidgetFeedbackSubmit}
+          loading={feedbackLoading}
+          feedbackConfig={feedbackConfig}
+          initialFeedback={activeFeedbackMsg.feedback}
+          initialThumbup={activeFeedbackMsg.thumbup}
+          initialDetail={activeFeedbackMsg.feedback_detail}
+        />
+      )}
     </div>
   );
 };

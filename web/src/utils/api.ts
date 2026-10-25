@@ -313,6 +313,12 @@ export default {
     `${restAPIv1}/chats/${chatId}/sessions/${sessionId}/messages/${msgId}`,
   thumbup: (chatId: string, sessionId: string, msgId: string) =>
     `${restAPIv1}/chats/${chatId}/sessions/${sessionId}/messages/${msgId}/feedback`,
+  chatbotThumbup: (dialogId: string, sessionId: string, msgId: string) =>
+    `${restAPIv1}/chatbots/${dialogId}/sessions/${sessionId}/messages/${msgId}/feedback`,
+  agentThumbup: (canvasId: string, sessionId: string, msgId: string) =>
+    `${restAPIv1}/agents/${canvasId}/sessions/${sessionId}/messages/${msgId}/feedback`,
+  agentbotThumbup: (agentId: string, sessionId: string, msgId: string) =>
+    `${restAPIv1}/agentbots/${agentId}/sessions/${sessionId}/messages/${msgId}/feedback`,
   completionUrl: `${restAPIv1}/chat/completions`,
   chatsTts: `${restAPIv1}/chat/audio/speech`,
   searchCompletion: (searchId: string) =>
@@ -375,6 +381,11 @@ export default {
     `${restAPIv1}/agents/${agentId}/sessions`,
   fetchAgentSessionById: (agentId: string, sessionId: string) =>
     `${restAPIv1}/agents/${agentId}/sessions/${sessionId}`,
+  feedbackSessions: `${restAPIv1}/feedback/sessions`,
+  chatFeedbackSessions: (chatId: string) =>
+    `${restAPIv1}/chats/${chatId}/feedback-sessions`,
+  agentFeedbackSessions: (canvasId: string) =>
+    `${restAPIv1}/agents/${canvasId}/feedback-sessions`,
   fetchExternalAgentInputs: (canvasId: string) =>
     `${restAPIv1}/agentbots/${canvasId}/inputs`,
   prompt: `${restAPIv1}/agents/prompts`,

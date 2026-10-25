@@ -29,13 +29,40 @@ type IncomingMessage struct {
 	Raw       map[string]any
 }
 
+type InlineButton struct {
+	Text         string `json:"text"`
+	CallbackData string `json:"callback_data"`
+}
+
 type OutgoingMessage struct {
 	ChatID           string
 	Text             string
 	ReplyToMessageID string
+	InlineButtons    [][]InlineButton
+}
+
+type CallbackQuery struct {
+	ID        string
+	Channel   string
+	AccountID string
+	ChatID    string
+	MessageID string
+	SenderID  string
+	Data      string
+}
+
+type CallbackResult struct {
+	ToastText     string
+	InlineButtons [][]InlineButton
 }
 
 type MessageHandler func(ctx context.Context, msg IncomingMessage) error
+
+type CallbackHandler func(ctx context.Context, cb CallbackQuery) (*CallbackResult, error)
+
+type CallbackCapableChannel interface {
+	SetCallbackHandler(CallbackHandler)
+}
 
 type Channel interface {
 	ChannelID() string                                   // ChannelID return channel's name

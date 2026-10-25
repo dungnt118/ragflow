@@ -642,3 +642,24 @@ func TestChatServiceCreateWithDatasetSeedsDatasetSystemPrompt(t *testing.T) {
 		t.Fatalf("expected dataset-oriented default system prompt, got %#v", promptConfig["system"])
 	}
 }
+
+func TestChatServiceUpdateChatAcceptsNilDecisionIDAndRerankID(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
+
+	svc := NewChatService()
+	ctx := t.Context()
+	resp, err := svc.UpdateChat(ctx, "user-1", "chat-1", map[string]interface{}{
+		"name":        "chat-chat-1",
+		"decision_id": nil,
+		"rerank_id":   nil,
+		"kb_ids":      []interface{}{},
+	})
+	if err != nil {
+		t.Fatalf("UpdateChat with nil decision_id/rerank_id and raw kb_ids failed: %v", err)
+	}
+	if resp["decision_id"] != (*string)(nil) && resp["decision_id"] != nil {
+		t.Fatalf("expected decision_id to be nil, got %#v", resp["decision_id"])
+	}
+}
+

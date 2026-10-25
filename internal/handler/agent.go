@@ -1658,3 +1658,38 @@ func (h *AgentHandler) ResetAgent(c *gin.Context) {
 	}
 	common.SuccessWithData(c, dsl, "success")
 }
+
+// UpdateAgentSessionFeedback PUT /api/v1/agents/:canvas_id/sessions/:session_id/messages/:msg_id/feedback
+func (h *AgentHandler) UpdateAgentSessionFeedback(c *gin.Context) {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
+		common.ResponseWithCodeData(c, code, nil, msg)
+		return
+	}
+	canvasID := c.Param("canvas_id")
+	sessionID := c.Param("session_id")
+	msgID := c.Param("msg_id")
+	if canvasID == "" || sessionID == "" || msgID == "" {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`canvas_id`, `session_id`, and `msg_id` are required.")
+		return
+	}
+	req := map[string]interface{}{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if errors.Is(err, io.EOF) {
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Request body cannot be empty")
+			return
+		}
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
+		return
+	}
+	if len(req) == 0 {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Request body cannot be empty")
+		return
+	}
+	result, ec, err := h.agentService.UpdateAgentSessionFeedback(c.Request.Context(), user.ID, canvasID, sessionID, msgID, req)
+	if err != nil {
+		common.ResponseWithCodeData(c, ec, nil, err.Error())
+		return
+	}
+	common.SuccessWithData(c, result, "success")
+}

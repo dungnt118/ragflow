@@ -211,11 +211,13 @@ func (r *Router) Setup(engine *gin.Engine) {
 		chatBotGroup := apiBetaAuth.Group("/chatbots")
 		chatBotGroup.POST("/:dialog_id/completions", r.botHandler.ChatbotCompletion)
 		chatBotGroup.GET("/:dialog_id/info", r.botHandler.ChatbotInfo)
+		chatBotGroup.PUT("/:dialog_id/sessions/:session_id/messages/:msg_id/feedback", r.botHandler.ChatbotFeedback)
 
 		agentBotGroup := apiBetaAuth.Group("/agentbots")
 		agentBotGroup.POST("/:agent_id/completions", r.botHandler.AgentbotCompletion)
 		agentBotGroup.GET("/:agent_id/inputs", r.botHandler.AgentbotInputs)
 		agentBotGroup.GET("/:agent_id/logs/:message_id", r.botHandler.GetAgentbotLogs)
+		agentBotGroup.PUT("/:agent_id/sessions/:session_id/messages/:msg_id/feedback", r.botHandler.AgentbotFeedback)
 
 		// Public bot endpoints (authenticated with an SDK beta token, not a session).
 		// The image/thumbnail routes accept the beta token like Python's
@@ -321,6 +323,13 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chats.PATCH("/:chat_id/sessions/:session_id", r.chatSessionHandler.UpdateSession)
 				chats.DELETE("/:chat_id/sessions/:session_id/messages/:msg_id", r.chatSessionHandler.DeleteSessionMessage)
 				chats.PUT("/:chat_id/sessions/:session_id/messages/:msg_id/feedback", r.chatSessionHandler.UpdateMessageFeedback)
+				chats.GET("/:chat_id/feedback-sessions", r.chatSessionHandler.ListChatFeedbackSessions)
+			}
+
+			// Unified Feedback Audit routes (supports both Chat Assistant & Agent sessions)
+			feedbackGroup := v1.Group("/feedback")
+			{
+				feedbackGroup.GET("/sessions", r.chatSessionHandler.ListUnifiedFeedbackSessions)
 			}
 
 			chat := v1.Group("/chat", ToggleChat())

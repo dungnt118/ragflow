@@ -109,6 +109,7 @@ const ChatContainer = () => {
                       sendLoading &&
                       derivedMessages?.length - 1 === i
                     }
+                    sendLoading={sendLoading}
                     index={i}
                     isLast={i === derivedMessages.length - 1}
                     clickDocumentButton={clickDocumentButton}

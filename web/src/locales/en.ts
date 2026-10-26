@@ -1245,6 +1245,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       betaError:
         'Please acquire a RAGFlow API Key from the System Settings page first.',
       searching: 'Searching...',
+      typingIndicator: 'Typing a response...',
       parsing: 'Parsing',
       uploading: 'Uploading',
       uploadFailed: 'Upload failed',

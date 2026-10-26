@@ -203,6 +203,7 @@ func TestTelegramSendIgnoresInvalidChatID(t *testing.T) {
 
 func TestTelegramStartAndStopPollsUpdates(t *testing.T) {
 	updateReturned := false
+	typingActions := make(chan map[string]any, 4)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/deleteWebhook"):
@@ -214,6 +215,15 @@ func TestTelegramStartAndStopPollsUpdates(t *testing.T) {
 				return
 			}
 			_, _ = w.Write([]byte(`{"ok":true,"result":[]}`))
+		case strings.HasSuffix(r.URL.Path, "/sendChatAction"):
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
+				select {
+				case typingActions <- payload:
+				default:
+				}
+			}
+			_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
 		case strings.HasSuffix(r.URL.Path, "/sendMessage"):
 			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":1}}`))
 		default:
@@ -248,7 +258,61 @@ func TestTelegramStartAndStopPollsUpdates(t *testing.T) {
 		t.Fatal("timed out waiting for polled message")
 	}
 
+	select {
+	case action := <-typingActions:
+		if action["chat_id"] != float64(5) || action["action"] != "typing" {
+			t.Fatalf("unexpected sendChatAction payload: %+v", action)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for sendChatAction")
+	}
+
 	if err := ch.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop() error = %v", err)
+	}
+}
+
+func TestTelegramHandleUpdateRefreshesTypingActionWhileProcessing(t *testing.T) {
+	typingCalls := make(chan map[string]any, 10)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/sendChatAction") {
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
+				typingCalls <- payload
+			}
+			_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+	}))
+	defer server.Close()
+
+	ch := newTelegramChannel(telegramAccount{
+		AccountID:      "account-1",
+		Token:          "token",
+		APIBaseURL:     server.URL,
+		TypingInterval: 15 * time.Millisecond,
+	})
+	ch.SetMessageHandler(func(_ context.Context, _ core.IncomingMessage) error {
+		time.Sleep(40 * time.Millisecond)
+		return nil
+	})
+
+	ch.handleUpdate(context.Background(), telegramUpdate{
+		UpdateID: 1,
+		Message: &telegramMessage{
+			MessageID: 10,
+			From:      &telegramUser{ID: 7},
+			Chat:      telegramChat{ID: 99, Type: "private"},
+			Text:      "hi",
+		},
+	})
+
+	if len(typingCalls) < 2 {
+		t.Fatalf("expected at least 2 sendChatAction calls during processing, got %d", len(typingCalls))
+	}
+	first := <-typingCalls
+	if first["chat_id"] != float64(99) || first["action"] != "typing" {
+		t.Fatalf("unexpected typing payload: %+v", first)
 	}
 }

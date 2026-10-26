@@ -1140,13 +1140,7 @@ const FloatingChatWidget = () => {
                             }
                             clickDocumentButton={clickDocumentButton}
                           />
-                          <div className="flex justify-end" role="toolbar">
-                            <CopyToClipboard
-                              text={removeThinkSection(message.content)}
-                              className="border-0"
-                              size="icon-xs"
-                            />
-                          </div>
+                          {renderMessageToolbar(message, index)}
                         </div>
                       )}
                     </div>
@@ -1154,7 +1148,7 @@ const FloatingChatWidget = () => {
                 ))}
 
                 {/* Typing Indicator */}
-                {sendLoading && (
+                {sendLoading && !enableStreaming && (
                   <div className="flex justify-start">
                     <div className="bg-gray-100 rounded-2xl rounded-bl-md px-4 py-3">
                       <div className="flex space-x-1">

@@ -14,18 +14,30 @@
  *  limitations under the License.
  */
 
+import { cn } from '@/lib/utils';
 import styles from './index.module.less';
 
 interface LoadingDotsProps {
   className?: string;
+  label?: string;
 }
 
-export function LoadingDots({ className }: LoadingDotsProps) {
+export function LoadingDots({ className, label }: LoadingDotsProps) {
   return (
-    <span className={className} aria-label="Loading">
-      <span className={styles.dot} />
-      <span className={styles.dot} />
-      <span className={styles.dot} />
+    <span
+      className={cn('inline-flex items-center gap-2', className)}
+      aria-label={label || 'Loading'}
+    >
+      <span className="inline-flex items-center">
+        <span className={styles.dot} />
+        <span className={styles.dot} />
+        <span className={styles.dot} />
+      </span>
+      {label && (
+        <span className="text-xs font-medium text-text-secondary animate-pulse">
+          {label}
+        </span>
+      )}
     </span>
   );
 }

@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils';
 import classNames from 'classnames';
 import { isEmpty } from 'lodash';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { DocumentDownloadButton } from '../document-download-button';
 import { FeedbackSummaryBadge } from '../feedback-summary-badge';
 import { LoadingDots } from '../loading-dots';
@@ -97,8 +98,10 @@ const MessageItem = ({
   onFeedbackSuccess,
 }: IProps) => {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
+  const isTyping = isAssistant && (loading || (sendLoading && isLast));
 
   const [localThumbup, setLocalThumbup] = useState<boolean | undefined>(
     item.thumbup,
@@ -228,7 +231,7 @@ const MessageItem = ({
               ></UserGroupButton>
             )}
             {/* Show message content if there's any text besides the download */}
-            {(messageContent || sendLoading) && (
+            {(messageContent || isTyping) && (
               <div
                 className={cn(
                   isAssistant
@@ -239,8 +242,11 @@ const MessageItem = ({
                   { '!bg-bg-card': !isAssistant },
                 )}
               >
-                {sendLoading && isLast && isEmpty(messageContent) ? (
-                  <LoadingDots className="text-text-secondary" />
+                {isTyping && isEmpty(messageContent) ? (
+                  <LoadingDots
+                    className="text-text-secondary py-1"
+                    label={t('chat.typingIndicator', 'Đang soạn câu trả lời...')}
+                  />
                 ) : (
                   <MarkdownContent
                     loading={loading}

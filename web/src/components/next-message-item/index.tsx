@@ -42,6 +42,7 @@ import { citationMarkerReg } from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
 import { isEmpty } from 'lodash';
 import { Atom, ChevronDown, ChevronUp } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { DocumentDownloadButton } from '../document-download-button';
 import { FeedbackSummaryBadge } from '../feedback-summary-badge';
 import { LoadingDots } from '../loading-dots';
@@ -120,8 +121,10 @@ function MessageItem({
   onFeedbackSuccess,
 }: IProps) {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
+  const isTyping = isAssistant && (loading || sendLoading);
   const [showThinking, setShowThinking] = useState(false);
   const { setLastSendLoadingFunc } = useContext(AgentChatContext);
 
@@ -199,7 +202,7 @@ function MessageItem({
   );
 
   const renderContent = useCallback(() => {
-    if (!messageContent && !(item.data || (sendLoading && !isShare))) {
+    if (!messageContent && !(item.data || isTyping)) {
       return null;
     }
 
@@ -217,8 +220,11 @@ function MessageItem({
       >
         {hasCustomChildren ? (
           children
-        ) : sendLoading && isEmpty(messageContent) ? (
-          <>{!isShare && <LoadingDots className="text-text-secondary" />}</>
+        ) : isTyping && isEmpty(messageContent) ? (
+          <LoadingDots
+            className="text-text-secondary py-1"
+            label={t('chat.typingIndicator', 'Đang soạn câu trả lời...')}
+          />
         ) : (
           <MarkdownContent
             loading={loading}
@@ -234,12 +240,13 @@ function MessageItem({
     children,
     clickDocumentButton,
     isAssistant,
-    isShare,
+    isTyping,
+    isUser,
     item.data,
     loading,
     messageContent,
     reference,
-    sendLoading,
+    t,
     theme,
   ]);
 
@@ -294,7 +301,7 @@ function MessageItem({
                         className={startedNodeList(item) ? 'animate-spin' : ''}
                       />
                     </div>
-                    Thinking
+                    {t('chat.thinking', 'Thinking')}
                     {showThinking ? <ChevronUp /> : <ChevronDown />}
                   </div>
                 </Button>

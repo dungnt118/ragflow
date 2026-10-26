@@ -40,12 +40,14 @@ const (
 	telegramPollTimeout       = 30 * time.Second
 	telegramHTTPTimeout       = 40 * time.Second
 	telegramReconnectDelay    = 3 * time.Second
+	telegramTypingInterval    = 4 * time.Second
 )
 
 type telegramAccount struct {
-	AccountID  string
-	Token      string
-	APIBaseURL string
+	AccountID      string
+	Token          string
+	APIBaseURL     string
+	TypingInterval time.Duration
 }
 
 type telegramChannel struct {
@@ -376,9 +378,60 @@ func (c *telegramChannel) handleUpdate(ctx context.Context, update telegramUpdat
 	if handler == nil {
 		return
 	}
+
+	stopTyping := c.startTyping(ctx, msg.Chat.ID, msg.Chat.Type)
+	defer stopTyping()
+
 	if err := handler(ctx, incoming); err != nil {
 		common.Error("telegram: message handler error", err, zap.String("account_id", c.account.AccountID))
 	}
+}
+
+// startTyping sends Telegram's "typing" chat action immediately and refreshes it
+// periodically until the returned cancel function is called or ctx is done.
+func (c *telegramChannel) startTyping(ctx context.Context, chatID int64, rawChatType string) context.CancelFunc {
+	if rawChatType == "channel" {
+		return func() {}
+	}
+	typingCtx, cancel := context.WithCancel(ctx)
+	interval := c.account.TypingInterval
+	if interval <= 0 {
+		interval = telegramTypingInterval
+	}
+
+	c.sendTypingAction(typingCtx, chatID)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-typingCtx.Done():
+				return
+			case <-ticker.C:
+				c.sendTypingAction(typingCtx, chatID)
+			}
+		}
+	}()
+
+	return func() {
+		cancel()
+		<-done
+	}
+}
+
+func (c *telegramChannel) sendTypingAction(ctx context.Context, chatID int64) {
+	if ctx.Err() != nil {
+		return
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_ = c.callAPI(reqCtx, "sendChatAction", map[string]any{
+		"chat_id": chatID,
+		"action":  "typing",
+	}, nil)
 }
 
 func (c *telegramChannel) handleCallbackUpdate(ctx context.Context, cb *telegramCallbackQuery) {

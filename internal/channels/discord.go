@@ -583,9 +583,50 @@ func (c *discordChannel) handleIncoming(ctx context.Context, incoming core.Incom
 	if handler == nil {
 		return
 	}
+	stopTyping := c.startTyping(ctx, incoming.ChatID)
+	defer stopTyping()
+
 	if err := handler(ctx, incoming); err != nil {
 		common.Error("discord: message handler error", err, zap.String("account_id", c.account.AccountID))
 	}
+}
+
+func (c *discordChannel) startTyping(ctx context.Context, chatID string) context.CancelFunc {
+	chatID = strings.TrimSpace(chatID)
+	if chatID == "" {
+		return func() {}
+	}
+	typingCtx, cancel := context.WithCancel(ctx)
+	c.sendTypingAction(typingCtx, chatID)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(8 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-typingCtx.Done():
+				return
+			case <-ticker.C:
+				c.sendTypingAction(typingCtx, chatID)
+			}
+		}
+	}()
+
+	return func() {
+		cancel()
+		<-done
+	}
+}
+
+func (c *discordChannel) sendTypingAction(ctx context.Context, chatID string) {
+	if ctx.Err() != nil {
+		return
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_ = c.requestJSON(reqCtx, http.MethodPost, "/channels/"+url.PathEscape(chatID)+"/typing", nil, nil)
 }
 
 // pruneSeenLocked removes expired duplicate-tracking entries while c.mu is held.

@@ -188,7 +188,11 @@ const ChatContainer = () => {
                     }
                     showLoudspeaker={false}
                     showLog={false}
-                    sendLoading={sendLoading}
+                    sendLoading={
+                      message.role === MessageType.Assistant &&
+                      sendLoading &&
+                      derivedMessages?.length - 1 === i
+                    }
                     feedbackConfig={inputsData?.feedback_config}
                     sessionId={sharedSessionId}
                     isAgent={true}

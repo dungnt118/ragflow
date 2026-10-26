@@ -42,6 +42,12 @@ interface IAgentLogReferenceChunk {
 // even though IAgentLogMessage does not declare it.
 type AgentLogMessageWithReference = IAgentLogMessage & {
   reference?: IAgentLogReferenceChunk[];
+  sender_display?: string;
+  sender_name?: string;
+  sender_username?: string;
+  chat_title?: string;
+  reply_to_sender?: string;
+  reply_to_message_id?: string;
 };
 
 const buildReferenceObject = (
@@ -130,20 +136,49 @@ export const AgentLogDetailModal: React.FC<CustomModalProps> = ({
         <div className="w-full">
           {derivedMessages?.map((message, i) => {
             const msg = message as AgentLogMessageWithReference;
+            const senderLabel =
+              msg.sender_display ||
+              msg.sender_name ||
+              (msg.sender_username ? `@${msg.sender_username}` : '');
+            const isUserMsg = (msg as any).role === 'user';
             return (
-              <MessageItem
+              <div
                 key={buildMessageUuidWithRole(
                   message as Partial<Message | IMessage>,
                 )}
-                nickname={userInfo.nickname}
-                avatar={userInfo.avatar}
-                item={message as IMessage}
-                reference={buildReferenceObject(msg.reference)}
-                index={i}
-                showLikeButton={false}
-                showLog={false}
-                feedbackConfig={feedbackConfig}
-              ></MessageItem>
+                className="w-full"
+              >
+                {isUserMsg && (senderLabel || msg.chat_title || msg.reply_to_message_id) && (
+                  <div className="flex justify-end items-center gap-2 text-xs text-text-secondary mb-1 pr-12">
+                    {msg.chat_title && (
+                      <span className="px-1.5 py-0.5 rounded bg-bg-card border border-border-button">
+                        Nhóm: {msg.chat_title}
+                      </span>
+                    )}
+                    {senderLabel && (
+                      <span className="font-medium text-text-primary">
+                        👤 {senderLabel}
+                      </span>
+                    )}
+                    {msg.reply_to_message_id && (
+                      <span className="opacity-80">
+                        ↩️ Reply #{msg.reply_to_message_id}
+                        {msg.reply_to_sender ? ` (${msg.reply_to_sender})` : ''}
+                      </span>
+                    )}
+                  </div>
+                )}
+                <MessageItem
+                  nickname={senderLabel || userInfo.nickname}
+                  avatar={senderLabel ? undefined : userInfo.avatar}
+                  item={message as IMessage}
+                  reference={buildReferenceObject(msg.reference)}
+                  index={i}
+                  showLikeButton={false}
+                  showLog={false}
+                  feedbackConfig={feedbackConfig}
+                ></MessageItem>
+              </div>
             );
           })}
         </div>

@@ -229,13 +229,24 @@ func credentialFromConfig(config entity.JSONMap) map[string]any {
 	if config == nil {
 		return map[string]any{}
 	}
+	out := map[string]any{}
 	if raw, ok := config["credential"].(map[string]any); ok {
-		return raw
+		for k, v := range raw {
+			out[k] = v
+		}
+	} else if raw, ok := config["credential"].(entity.JSONMap); ok {
+		for k, v := range raw {
+			out[k] = v
+		}
 	}
-	if raw, ok := config["credential"].(entity.JSONMap); ok {
-		return raw
+	for _, key := range []string{"allowGroupPrivacy", "allow_group_privacy"} {
+		if val, exists := config[key]; exists {
+			if _, hasInCred := out[key]; !hasInCred {
+				out[key] = val
+			}
+		}
 	}
-	return map[string]any{}
+	return out
 }
 
 // fingerprint returns a stable hash for the configuration that requires a channel restart.
@@ -261,13 +272,22 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 	channelService := service.NewChatChannelService()
 	ch.SetMessageHandler(func(ctx context.Context, msg core.IncomingMessage) error {
 		reply, err := channelService.HandleIncomingChannelMessage(ctx, service.ChatChannelIncomingMessage{
-			Channel:   msg.Channel,
-			AccountID: msg.AccountID,
-			ChatID:    msg.ChatID,
-			ChatType:  msg.ChatType,
-			MessageID: msg.MessageID,
-			SenderID:  msg.SenderID,
-			Text:      msg.Text,
+			Channel:          msg.Channel,
+			AccountID:        msg.AccountID,
+			ChatID:           msg.ChatID,
+			ChatType:         msg.ChatType,
+			ChatTitle:        msg.ChatTitle,
+			MessageID:        msg.MessageID,
+			ThreadID:         msg.ThreadID,
+			SenderID:         msg.SenderID,
+			SenderName:       msg.SenderName,
+			SenderUsername:   msg.SenderUsername,
+			ReplyToMessageID: msg.ReplyToMessageID,
+			ReplyToSender:    msg.ReplyToSender,
+			ReplyToText:      msg.ReplyToText,
+			ReplyToIsBot:     msg.ReplyToIsBot,
+			QuoteText:        msg.QuoteText,
+			Text:             msg.Text,
 		})
 		if err != nil || reply == nil || reply.Answer == "" {
 			return err

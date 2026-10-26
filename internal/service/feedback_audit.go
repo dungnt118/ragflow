@@ -403,6 +403,22 @@ func buildUnifiedItemFromChatSession(conv *entity.ChatSession, meta appMetadata)
 	if conv.UserID != nil {
 		userID = *conv.UserID
 	}
+	if strings.TrimSpace(userID) == "" {
+		for _, m := range messages {
+			if stringValue(m["role"]) != "user" {
+				continue
+			}
+			for _, key := range []string{"sender_display", "sender_username", "sender_name", "sender_id"} {
+				if v := strings.TrimSpace(stringValue(m[key])); v != "" {
+					userID = v
+					break
+				}
+			}
+			if userID != "" {
+				break
+			}
+		}
+	}
 
 	defaultChannel := "web"
 	if strings.HasPrefix(name, "(channel:") || strings.HasPrefix(name, "channel:") {

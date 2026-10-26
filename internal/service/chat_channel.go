@@ -47,13 +47,22 @@ func NewChatChannelService() *ChatChannelService {
 }
 
 type ChatChannelIncomingMessage struct {
-	Channel   string
-	AccountID string
-	ChatID    string
-	ChatType  string
-	MessageID string
-	SenderID  string
-	Text      string
+	Channel          string
+	AccountID        string
+	ChatID           string
+	ChatType         string
+	ChatTitle        string
+	MessageID        string
+	ThreadID         string
+	SenderID         string
+	SenderName       string
+	SenderUsername   string
+	ReplyToMessageID string
+	ReplyToSender    string
+	ReplyToText      string
+	ReplyToIsBot     bool
+	QuoteText        string
+	Text             string
 }
 
 type ChatChannelOutgoingReply struct {
@@ -289,22 +298,31 @@ func (s *ChatChannelService) HandleIncomingChannelMessage(ctx context.Context, m
 		return nil, err
 	}
 
-	session, err := s.chatSessionSvc.GetOrCreateForChannel(ctx, dialog.ID, channel.ID, msg.ChatID, msg.Text, channel.Name)
+	senderDisplay := formatChannelSenderDisplay(msg.SenderUsername, msg.SenderName, msg.SenderID, msg.ChatID)
+	channelLabel := formatChannelSessionLabel(channel.Name, msg.ChatType, msg.ChatTitle, senderDisplay)
+	session, err := s.resolveOrCreateChannelSession(ctx, dialog.ID, channel.ID, channelLabel, senderDisplay, msg)
 	if err != nil {
 		return nil, err
 	}
+
+	existingMsgs := parseMessages(session.Message)
+	effectiveText := buildContextualChannelQuery(msg, existingMsgs)
+	userMsg := buildChannelUserMessagePayload(msg, effectiveText, senderDisplay)
 
 	result, err := s.chatSessionSvc.ChatCompletions(
 		ctx,
 		dialog.TenantID,
 		dialog.ID,
 		session.ID,
-		[]map[string]interface{}{{"role": "user", "content": msg.Text}},
+		[]map[string]interface{}{userMsg},
 		"",
 		nil,
 		"",
 		nil,
-		map[string]interface{}{"quote": false},
+		map[string]interface{}{
+			"quote":            false,
+			"refine_multiturn": true,
+		},
 		false,
 		false,
 		nil,
@@ -318,6 +336,9 @@ func (s *ChatChannelService) HandleIncomingChannelMessage(ctx context.Context, m
 	}
 	answer, _ := result["answer"].(string)
 	replyMsgID, _ := result["id"].(string)
+	if replyMsgID != "" {
+		rememberChannelReplySession(replyMsgID, session.ID)
+	}
 	var inlineButtons [][]core.InlineButton
 	feedbackCfg := entity.ExtractFeedbackConfig(dialog.PromptConfig)
 	if feedbackCfg != nil && feedbackCfg.Enabled && replyMsgID != "" {
@@ -391,8 +412,9 @@ func (s *ChatChannelService) HandleCallbackQuery(ctx context.Context, cb core.Ca
 		return nil, errors.New("dialog not found")
 	}
 
-	// Deterministic session_id derivation (FND-06) keeps callback_data well under 64 bytes.
-	sessionID := channelSessionID(dialog.ID, channel.ID, cb.ChatID)
+	// Resolve session_id from the rated assistant message ID (supporting group reply-thread sessions),
+	// falling back to the deterministic chat-level session_id.
+	sessionID := s.resolveChannelCallbackSessionID(ctx, dialog.ID, channel.ID, cb.ChatID, msgID)
 	feedbackCfg := entity.ExtractFeedbackConfig(dialog.PromptConfig)
 
 	if action == "up" || action == "dn" {
@@ -511,4 +533,305 @@ func waitingRuntimeSnapshotMap(channelID string) map[string]any {
 		"gateway_base_url": nil,
 		"event_cursor":     int64(0),
 	}
+}
+
+var (
+	channelReplySessionMu    sync.RWMutex
+	channelReplySessionByMsg = make(map[string]string)
+	channelReplySessionOrder []string
+)
+
+const maxChannelReplySessionCache = 10000
+
+func rememberChannelReplySession(messageID, sessionID string) {
+	messageID = strings.TrimSpace(messageID)
+	sessionID = strings.TrimSpace(sessionID)
+	if messageID == "" || sessionID == "" {
+		return
+	}
+	channelReplySessionMu.Lock()
+	defer channelReplySessionMu.Unlock()
+	if _, exists := channelReplySessionByMsg[messageID]; !exists {
+		if len(channelReplySessionOrder) >= maxChannelReplySessionCache {
+			evict := maxChannelReplySessionCache / 10
+			if evict < 1 {
+				evict = 1
+			}
+			for _, oldKey := range channelReplySessionOrder[:evict] {
+				delete(channelReplySessionByMsg, oldKey)
+			}
+			channelReplySessionOrder = channelReplySessionOrder[evict:]
+		}
+		channelReplySessionOrder = append(channelReplySessionOrder, messageID)
+	}
+	channelReplySessionByMsg[messageID] = sessionID
+}
+
+func lookupChannelReplySession(messageID string) string {
+	channelReplySessionMu.RLock()
+	defer channelReplySessionMu.RUnlock()
+	return channelReplySessionByMsg[strings.TrimSpace(messageID)]
+}
+
+func (s *ChatChannelService) resolveChannelCallbackSessionID(ctx context.Context, dialogID, channelID, chatID, msgID string) string {
+	if cached := lookupChannelReplySession(msgID); cached != "" {
+		return cached
+	}
+	if dao.DB != nil && strings.TrimSpace(msgID) != "" {
+		var convID string
+		err := dao.DB.WithContext(ctx).
+			Table("conversation_message AS cm").
+			Select("cm.conversation_id").
+			Joins("JOIN conversation AS c ON c.id = cm.conversation_id").
+			Where("c.dialog_id = ? AND cm.message_id = ? AND cm.role = ?", dialogID, msgID, "assistant").
+			Limit(1).
+			Scan(&convID).Error
+		if err == nil && strings.TrimSpace(convID) != "" {
+			rememberChannelReplySession(msgID, convID)
+			return strings.TrimSpace(convID)
+		}
+	}
+	return channelSessionID(dialogID, channelID, chatID)
+}
+
+func formatChannelSenderDisplay(username, fullName, senderID, chatID string) string {
+	username = strings.TrimPrefix(strings.TrimSpace(username), "@")
+	fullName = strings.TrimSpace(fullName)
+	senderID = strings.TrimSpace(senderID)
+	if username != "" && fullName != "" {
+		return "@" + username + " (" + fullName + ")"
+	}
+	if username != "" {
+		return "@" + username
+	}
+	if fullName != "" {
+		return fullName
+	}
+	if senderID != "" && senderID != strings.TrimSpace(chatID) {
+		return "uid:" + senderID
+	}
+	return ""
+}
+
+func formatChannelSessionLabel(channelName, chatType, chatTitle, senderDisplay string) string {
+	base := strings.TrimSpace(channelName)
+	chatTitle = strings.TrimSpace(chatTitle)
+	senderDisplay = strings.TrimSpace(senderDisplay)
+
+	if chatType == "group" {
+		parts := make([]string, 0, 3)
+		if base != "" {
+			parts = append(parts, base)
+		}
+		if chatTitle != "" {
+			parts = append(parts, "Nhóm: "+chatTitle)
+		} else {
+			parts = append(parts, "Nhóm")
+		}
+		if senderDisplay != "" {
+			parts = append(parts, senderDisplay)
+		}
+		return strings.Join(parts, " | ")
+	}
+
+	if senderDisplay != "" && !strings.HasPrefix(senderDisplay, "uid:") {
+		if base != "" {
+			return base + " | " + senderDisplay
+		}
+		return senderDisplay
+	}
+	return base
+}
+
+func (s *ChatChannelService) resolveOrCreateChannelSession(
+	ctx context.Context,
+	dialogID, channelID, channelLabel, senderDisplay string,
+	msg ChatChannelIncomingMessage,
+) (*entity.ChatSession, error) {
+	sessionChatKey := msg.ChatID
+	if msg.ChatType == "group" {
+		threadID := strings.TrimSpace(msg.ThreadID)
+		if threadID == "" {
+			threadID = strings.TrimSpace(msg.ReplyToMessageID)
+		}
+		if threadID == "" {
+			threadID = strings.TrimSpace(msg.MessageID)
+		}
+		if threadID != "" {
+			sessionChatKey = msg.ChatID + ":thread:" + threadID
+		}
+
+		candidateID := channelSessionID(dialogID, channelID, sessionChatKey)
+		if existing, err := s.chatSessionSvc.chatSessionDAO.GetByID(ctx, dao.DB, candidateID); err == nil && existing != nil {
+			s.ensureChannelSessionSenderUserID(ctx, existing, senderDisplay)
+			return existing, nil
+		}
+
+		if strings.TrimSpace(msg.ReplyToMessageID) != "" || strings.TrimSpace(msg.ReplyToText) != "" {
+			if recovered := s.findExistingGroupReplySession(ctx, dialogID, msg.ChatID, msg.ReplyToMessageID, msg.ReplyToText, msg.ReplyToIsBot); recovered != nil {
+				s.ensureChannelSessionSenderUserID(ctx, recovered, senderDisplay)
+				return recovered, nil
+			}
+		}
+	}
+
+	session, err := s.chatSessionSvc.GetOrCreateForChannel(ctx, dialogID, channelID, sessionChatKey, msg.Text, channelLabel)
+	if err != nil {
+		return nil, err
+	}
+	s.ensureChannelSessionSenderUserID(ctx, session, senderDisplay)
+	return session, nil
+}
+
+func (s *ChatChannelService) ensureChannelSessionSenderUserID(ctx context.Context, session *entity.ChatSession, senderDisplay string) {
+	senderDisplay = strings.TrimSpace(senderDisplay)
+	if session == nil || senderDisplay == "" {
+		return
+	}
+	if session.UserID != nil && strings.TrimSpace(*session.UserID) != "" {
+		return
+	}
+	if len([]rune(senderDisplay)) > 255 {
+		senderDisplay = string([]rune(senderDisplay)[:255])
+	}
+	_ = s.chatSessionSvc.chatSessionDAO.UpdateByID(ctx, dao.DB, session.ID, map[string]interface{}{
+		"user_id": senderDisplay,
+	})
+	session.UserID = &senderDisplay
+}
+
+func (s *ChatChannelService) findExistingGroupReplySession(
+	ctx context.Context,
+	dialogID, chatID, replyToMsgID, replyToText string,
+	replyToIsBot bool,
+) *entity.ChatSession {
+	if dao.DB == nil {
+		return nil
+	}
+	replyToMsgID = strings.TrimSpace(replyToMsgID)
+	replyToText = strings.TrimSpace(replyToText)
+
+	if replyToMsgID != "" {
+		pattern := fmt.Sprintf("%%\"telegram_message_id\":\"%s\"%%", replyToMsgID)
+		var convID string
+		err := dao.DB.WithContext(ctx).
+			Table("conversation_message AS cm").
+			Select("cm.conversation_id").
+			Joins("JOIN conversation AS c ON c.id = cm.conversation_id").
+			Where("c.dialog_id = ? AND cm.metadata LIKE ?", dialogID, pattern).
+			Order("cm.position DESC").
+			Limit(1).
+			Scan(&convID).Error
+		if err == nil && strings.TrimSpace(convID) != "" {
+			if session, sErr := s.chatSessionSvc.chatSessionDAO.GetByID(ctx, dao.DB, strings.TrimSpace(convID)); sErr == nil && session != nil {
+				return session
+			}
+		}
+	}
+
+	if replyToIsBot && replyToText != "" {
+		var convID string
+		q := dao.DB.WithContext(ctx).
+			Table("conversation_message AS cm").
+			Select("cm.conversation_id").
+			Joins("JOIN conversation AS c ON c.id = cm.conversation_id").
+			Where("c.dialog_id = ? AND cm.role = ? AND cm.content = ?", dialogID, "assistant", replyToText)
+		if strings.TrimSpace(chatID) != "" {
+			chatPattern := fmt.Sprintf("%%\"chat_id\":\"%s\"%%", strings.TrimSpace(chatID))
+			q = q.Where("EXISTS (SELECT 1 FROM conversation_message AS um WHERE um.conversation_id = cm.conversation_id AND um.metadata LIKE ?)", chatPattern)
+		}
+		err := q.Order("c.update_time DESC").Limit(1).Scan(&convID).Error
+		if err == nil && strings.TrimSpace(convID) != "" {
+			if session, sErr := s.chatSessionSvc.chatSessionDAO.GetByID(ctx, dao.DB, strings.TrimSpace(convID)); sErr == nil && session != nil {
+				return session
+			}
+		}
+	}
+	return nil
+}
+
+func buildContextualChannelQuery(msg ChatChannelIncomingMessage, existingMsgs []map[string]interface{}) string {
+	userText := strings.TrimSpace(msg.Text)
+	quoteText := strings.TrimSpace(msg.QuoteText)
+	replyText := strings.TrimSpace(msg.ReplyToText)
+	replySender := strings.TrimSpace(msg.ReplyToSender)
+
+	if quoteText != "" {
+		excerpt := truncateChannelContextExcerpt(quoteText, 400)
+		if replySender != "" {
+			return fmt.Sprintf("[Trích dẫn tin nhắn được trả lời từ %s: %q]\n\n%s", replySender, excerpt, userText)
+		}
+		return fmt.Sprintf("[Trích dẫn tin nhắn được trả lời: %q]\n\n%s", excerpt, userText)
+	}
+
+	if replyText == "" {
+		return msg.Text
+	}
+
+	// If the session already has messages and the immediately preceding message in this thread
+	// has the exact same content as replyText, the thread history already carries it directly.
+	if len(existingMsgs) > 0 {
+		lastContent := strings.TrimSpace(stringValue(existingMsgs[len(existingMsgs)-1]["content"]))
+		if lastContent == replyText {
+			return msg.Text
+		}
+	}
+
+	excerpt := truncateChannelContextExcerpt(replyText, 500)
+	if replySender != "" {
+		return fmt.Sprintf("[Ngữ cảnh tin nhắn được trả lời từ %s: %q]\n\n%s", replySender, excerpt, userText)
+	}
+	return fmt.Sprintf("[Ngữ cảnh tin nhắn được trả lời: %q]\n\n%s", excerpt, userText)
+}
+
+func truncateChannelContextExcerpt(text string, maxRunes int) string {
+	runes := []rune(strings.TrimSpace(text))
+	if len(runes) <= maxRunes {
+		return string(runes)
+	}
+	return string(runes[:maxRunes]) + "..."
+}
+
+func buildChannelUserMessagePayload(msg ChatChannelIncomingMessage, effectiveText, senderDisplay string) map[string]interface{} {
+	userMsg := map[string]interface{}{
+		"role":    "user",
+		"content": effectiveText,
+	}
+	if msg.Channel != "" {
+		userMsg["channel"] = msg.Channel
+	}
+	if msg.ChatID != "" {
+		userMsg["chat_id"] = msg.ChatID
+	}
+	if msg.ChatType != "" {
+		userMsg["chat_type"] = msg.ChatType
+	}
+	if msg.ChatTitle != "" {
+		userMsg["chat_title"] = msg.ChatTitle
+	}
+	if msg.MessageID != "" {
+		userMsg["telegram_message_id"] = msg.MessageID
+	}
+	if msg.ThreadID != "" {
+		userMsg["thread_id"] = msg.ThreadID
+	}
+	if msg.SenderID != "" {
+		userMsg["sender_id"] = msg.SenderID
+	}
+	if msg.SenderName != "" {
+		userMsg["sender_name"] = msg.SenderName
+	}
+	if msg.SenderUsername != "" {
+		userMsg["sender_username"] = msg.SenderUsername
+	}
+	if senderDisplay != "" {
+		userMsg["sender_display"] = senderDisplay
+	}
+	if msg.ReplyToMessageID != "" {
+		userMsg["reply_to_message_id"] = msg.ReplyToMessageID
+	}
+	if msg.ReplyToSender != "" {
+		userMsg["reply_to_sender"] = msg.ReplyToSender
+	}
+	return userMsg
 }

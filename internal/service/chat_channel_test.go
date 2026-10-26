@@ -476,3 +476,106 @@ func TestGetOrCreateForChannelFallbackNames(t *testing.T) {
 		}
 	})
 }
+
+func TestTelegramGroupThreadSessionIsolationAndContextInjection(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	ctx := t.Context()
+
+	svc := NewChatChannelService()
+
+	// Thread 1 (Root Message #100 in group -100555)
+	msg1 := ChatChannelIncomingMessage{
+		Channel:        "telegram",
+		AccountID:      "cc-tg",
+		ChatID:         "-100555",
+		ChatType:       "group",
+		ChatTitle:      "BQL Cư Dân",
+		MessageID:      "100",
+		ThreadID:       "100",
+		SenderID:       "11",
+		SenderName:     "Nguyen Van A",
+		SenderUsername: "nguyenvana",
+		Text:           "Giá dịch vụ tháng này tính thế nào?",
+	}
+	sender1 := formatChannelSenderDisplay(msg1.SenderUsername, msg1.SenderName, msg1.SenderID, msg1.ChatID)
+	label1 := formatChannelSessionLabel("Riverside Bot", msg1.ChatType, msg1.ChatTitle, sender1)
+	sess1, err := svc.resolveOrCreateChannelSession(ctx, "dialog-1", "cc-tg", label1, sender1, msg1)
+	if err != nil {
+		t.Fatalf("resolveOrCreateChannelSession(msg1) error: %v", err)
+	}
+	if sess1.Name == nil || !strings.HasPrefix(*sess1.Name, "(channel: Riverside Bot | Nhóm: BQL Cư Dân | @nguyenvana (Nguyen Van A)) ") {
+		t.Fatalf("unexpected group thread session name: %v", sess1.Name)
+	}
+	if sess1.UserID == nil || *sess1.UserID != "@nguyenvana (Nguyen Van A)" {
+		t.Fatalf("expected session UserID to record sender display, got %v", sess1.UserID)
+	}
+
+	// Follow-up in Thread 1 (Message #105 replying to Bot #101 in same thread "100")
+	msg1FollowUp := ChatChannelIncomingMessage{
+		Channel:          "telegram",
+		AccountID:        "cc-tg",
+		ChatID:           "-100555",
+		ChatType:         "group",
+		ChatTitle:        "BQL Cư Dân",
+		MessageID:        "105",
+		ThreadID:         "100",
+		SenderID:         "22",
+		SenderName:       "Le Thi B",
+		SenderUsername:   "lethib",
+		ReplyToMessageID: "101",
+		ReplyToText:      "Phí dịch vụ là 12.000đ/m2.",
+		ReplyToIsBot:     true,
+		Text:             "Đã bao gồm phí gửi xe chưa?",
+	}
+	sender1FollowUp := formatChannelSenderDisplay(msg1FollowUp.SenderUsername, msg1FollowUp.SenderName, msg1FollowUp.SenderID, msg1FollowUp.ChatID)
+	label1FollowUp := formatChannelSessionLabel("Riverside Bot", msg1FollowUp.ChatType, msg1FollowUp.ChatTitle, sender1FollowUp)
+	sess1FollowUp, err := svc.resolveOrCreateChannelSession(ctx, "dialog-1", "cc-tg", label1FollowUp, sender1FollowUp, msg1FollowUp)
+	if err != nil {
+		t.Fatalf("resolveOrCreateChannelSession(msg1FollowUp) error: %v", err)
+	}
+	if sess1FollowUp.ID != sess1.ID {
+		t.Fatalf("expected reply in same thread to reuse session %s, got %s", sess1.ID, sess1FollowUp.ID)
+	}
+
+	// Thread 2 (Unrelated topic in the same group -100555, Message #200) -> MUST get a distinct Session!
+	msg2 := ChatChannelIncomingMessage{
+		Channel:          "telegram",
+		AccountID:        "cc-tg",
+		ChatID:           "-100555",
+		ChatType:         "group",
+		ChatTitle:        "BQL Cư Dân",
+		MessageID:        "201",
+		ThreadID:         "200",
+		SenderID:         "33",
+		SenderName:       "Tran Van C",
+		SenderUsername:   "tranvanc",
+		ReplyToMessageID: "200",
+		ReplyToSender:    "@userd (User D)",
+		ReplyToText:      "Khách ở căn A12 báo hỏng điều hòa trung tâm",
+		ReplyToIsBot:     false,
+		Text:             "quy trình bảo hành thiết bị này thế nào?",
+	}
+	sender2 := formatChannelSenderDisplay(msg2.SenderUsername, msg2.SenderName, msg2.SenderID, msg2.ChatID)
+	label2 := formatChannelSessionLabel("Riverside Bot", msg2.ChatType, msg2.ChatTitle, sender2)
+	sess2, err := svc.resolveOrCreateChannelSession(ctx, "dialog-1", "cc-tg", label2, sender2, msg2)
+	if err != nil {
+		t.Fatalf("resolveOrCreateChannelSession(msg2) error: %v", err)
+	}
+	if sess2.ID == sess1.ID {
+		t.Fatalf("expected distinct session for new thread in same group, both got %s", sess2.ID)
+	}
+
+	// Verify contextual query injection when replying to a message not yet in the session
+	enrichedQuery := buildContextualChannelQuery(msg2, nil)
+	if !strings.Contains(enrichedQuery, "Khách ở căn A12 báo hỏng điều hòa trung tâm") || !strings.Contains(enrichedQuery, "quy trình bảo hành thiết bị này thế nào?") {
+		t.Fatalf("expected buildContextualChannelQuery to inject replied-to text, got %q", enrichedQuery)
+	}
+
+	// Verify callback session resolution maps assistant message ID back to its thread session
+	rememberChannelReplySession("assistant-msg-thread-2", sess2.ID)
+	resolvedSessionID := svc.resolveChannelCallbackSessionID(ctx, "dialog-1", "cc-tg", "-100555", "assistant-msg-thread-2")
+	if resolvedSessionID != sess2.ID {
+		t.Fatalf("expected callback session ID %s, got %s", sess2.ID, resolvedSessionID)
+	}
+}

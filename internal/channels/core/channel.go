@@ -19,14 +19,23 @@ package core
 import "context"
 
 type IncomingMessage struct {
-	Channel   string
-	AccountID string
-	ChatID    string
-	ChatType  string
-	MessageID string
-	SenderID  string
-	Text      string
-	Raw       map[string]any
+	Channel          string
+	AccountID        string
+	ChatID           string
+	ChatType         string
+	ChatTitle        string
+	MessageID        string
+	ThreadID         string
+	SenderID         string
+	SenderName       string
+	SenderUsername   string
+	ReplyToMessageID string
+	ReplyToSender    string
+	ReplyToText      string
+	ReplyToIsBot     bool
+	QuoteText        string
+	Text             string
+	Raw              map[string]any
 }
 
 type InlineButton struct {

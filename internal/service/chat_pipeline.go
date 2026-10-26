@@ -643,7 +643,9 @@ func (s *ChatPipelineService) AsyncChat(
 
 		// refine_multiturn — condense multi-turn conversation into a single
 		// refined question via LLM. When disabled, simply keep the last question.
-		if refine, _ := chat.PromptConfig["refine_multiturn"].(bool); refine && len(questions) > 1 && chatModel != nil {
+		refineCfg, _ := chat.PromptConfig["refine_multiturn"].(bool)
+		refineKwarg, _ := kwargs["refine_multiturn"].(bool)
+		if (refineCfg || refineKwarg) && len(questions) > 1 && chatModel != nil {
 			if refined, err := FullQuestion(ctx, chatModel, messages, ""); err == nil && refined != "" {
 				questions = []string{refined} // replace with refined question
 				common.Debug("refine_multiturn applied",

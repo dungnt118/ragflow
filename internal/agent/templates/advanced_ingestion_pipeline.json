@@ -2,11 +2,13 @@
     "id": 23,
     "title": {
         "en": "Advanced Ingestion Pipeline",
+        "vi": "Pipeline Nạp & Làm giàu Tri thức Nâng cao",
         "de": "Erweiterte Ingestion Pipeline",
         "zh": "编排复杂的 Ingestion Pipeline"
     },
     "description": {
-        "en": "This template demonstrates how to use an LLM to generate summaries, keywords, Q&A, and metadata for each chunk to support diverse retrieval needs.",
+        "en": "This template uses an LLM Extractor to automatically generate summaries, keywords, hypothetical Q&A pairs, and structured metadata for each chunk before indexing. Use cases: High-precision enterprise knowledge bases, policy/regulation corpora, and technical documentation requiring multi-angle semantic retrieval.",
+        "vi": "Sử dụng khối Extractor kết hợp LLM để tự động sinh Tóm tắt, Từ khóa trọng tâm, Câu hỏi giả định (Q&A) và Metadata cho từng phân đoạn trước khi đánh chỉ mục. Tình huống sử dụng: Làm giàu Dataset doanh nghiệp đòi hỏi độ chính xác truy xuất cao, kho văn bản quy định nội bộ hoặc tài liệu kỹ thuật đa chiều.",
         "de": "Diese Vorlage demonstriert, wie ein LLM verwendet wird, um Zusammenfassungen, Schlüsselwörter, Fragen & Antworten und Metadaten für jedes Segment zu generieren, um vielfältige Abrufanforderungen zu unterstützen.",
         "zh": "此模板演示如何利用大模型为切片生成摘要、关键词、问答及元数据，以满足多样化的召回需求。"
     },

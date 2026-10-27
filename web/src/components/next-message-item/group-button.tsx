@@ -23,23 +23,28 @@ import {
 } from '@/components/ui/tooltip';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { IRemoveMessageById } from '@/hooks/logic-hooks';
+import { IFeedbackConfig, IFeedbackDetail } from '@/interfaces/request/chat';
+import { cn } from '@/lib/utils';
 import { AgentChatContext } from '@/pages/agent/context';
 import { downloadAgentFile } from '@/services/file-manager-service';
 import { removeThinkSection } from '@/utils/chat';
 import { downloadFileFromBlob } from '@/utils/file-util';
 import {
   DeleteOutlined,
+  DislikeFilled,
   DislikeOutlined,
+  LikeFilled,
   LikeOutlined,
   PauseCircleOutlined,
   SoundOutlined,
   SyncOutlined,
 } from '@ant-design/icons';
-import { Download, NotebookText } from 'lucide-react';
-import { useCallback, useContext, useMemo } from 'react';
+import { Download, NotebookText, Star } from 'lucide-react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import FeedbackDialog from '../feedback-dialog';
 import { PromptDialog } from '../prompt-dialog';
+import { Button } from '../ui/button';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group';
 import { useRemoveMessage, useSendFeedback, useSpeech } from './hooks';
 
@@ -57,6 +62,22 @@ interface IProps {
     format: string;
   };
   isShare?: boolean;
+  thumbup?: boolean;
+  feedback?: string;
+  feedbackDetail?: IFeedbackDetail;
+  feedbackConfig?: IFeedbackConfig;
+  sessionId?: string;
+  isAgent?: boolean;
+  targetId?: string;
+  channel?: string;
+  onFeedbackSuccess?: (
+    messageId: string,
+    patch: {
+      thumbup?: boolean;
+      feedback?: string;
+      feedback_detail?: IFeedbackDetail;
+    },
+  ) => void;
 }
 
 export const AssistantGroupButton = ({
@@ -69,9 +90,65 @@ export const AssistantGroupButton = ({
   showLog = true,
   attachment,
   isShare,
+  thumbup,
+  feedback,
+  feedbackDetail,
+  feedbackConfig,
+  sessionId,
+  isAgent,
+  targetId,
+  channel,
+  onFeedbackSuccess,
 }: IProps) => {
+  const [localThumbup, setLocalThumbup] = useState<boolean | undefined>(thumbup);
+  const [localFeedback, setLocalFeedback] = useState<string | undefined>(feedback);
+  const [localDetail, setLocalDetail] = useState<IFeedbackDetail | undefined>(
+    feedbackDetail,
+  );
+  const [pendingThumbup, setPendingThumbup] = useState<boolean | undefined>(
+    thumbup,
+  );
+
+  useEffect(() => {
+    setLocalThumbup(thumbup);
+  }, [thumbup]);
+
+  useEffect(() => {
+    setLocalFeedback(feedback);
+  }, [feedback]);
+
+  useEffect(() => {
+    setLocalDetail(feedbackDetail);
+  }, [feedbackDetail]);
+
+  const handleFeedbackUpdated = useCallback(
+    (
+      msgId: string,
+      patch: {
+        thumbup?: boolean;
+        feedback?: string;
+        feedback_detail?: IFeedbackDetail;
+      },
+    ) => {
+      setLocalThumbup(patch.thumbup);
+      setLocalFeedback(patch.feedback);
+      if (patch.feedback_detail) {
+        setLocalDetail(patch.feedback_detail);
+      }
+      onFeedbackSuccess?.(msgId, patch);
+    },
+    [onFeedbackSuccess],
+  );
+
   const { visible, hideModal, showModal, onFeedbackOk, loading } =
-    useSendFeedback(messageId);
+    useSendFeedback(messageId, {
+      sessionId,
+      isShared: isShare,
+      isAgent,
+      targetId,
+      channel,
+      onFeedbackSuccess: handleFeedbackUpdated,
+    });
   const {
     visible: promptVisible,
     hideModal: hidePromptModal,
@@ -80,9 +157,29 @@ export const AssistantGroupButton = ({
   const { t } = useTranslation();
   const { handleRead, ref, isPlaying } = useSpeech(content, audioBinary);
 
+  const isMultiCriteria =
+    feedbackConfig?.mode === 'multi_criteria' &&
+    Array.isArray(feedbackConfig?.criteria) &&
+    feedbackConfig.criteria.length > 0;
+
+  const isFeedbackEnabled =
+    feedbackConfig?.enabled !== undefined
+      ? Boolean(feedbackConfig.enabled)
+      : showLikeButton;
+
   const handleLike = useCallback(() => {
+    if (isMultiCriteria) {
+      setPendingThumbup(true);
+      showModal();
+      return;
+    }
     onFeedbackOk({ thumbup: true });
-  }, [onFeedbackOk]);
+  }, [isMultiCriteria, onFeedbackOk, showModal]);
+
+  const handleDislike = useCallback(() => {
+    setPendingThumbup(false);
+    showModal();
+  }, [showModal]);
 
   const { showLogSheet } = useContext(AgentChatContext);
 
@@ -94,87 +191,154 @@ export const AssistantGroupButton = ({
 
   return (
     <>
-      <ToggleGroup
-        type={'single'}
-        size="sm"
-        variant="outline"
-        className="space-x-1"
-      >
-        <ToggleGroupItem value="a">
-          <CopyToClipboard
-            text={copyText}
-            className="border-none hover:!bg-transparent"
-            avoidButtonWrapper
-          ></CopyToClipboard>
-        </ToggleGroupItem>
-        {showLoudspeaker && (
-          <ToggleGroupItem value="b" onClick={handleRead}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  {isPlaying ? <PauseCircleOutlined /> : <SoundOutlined />}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>{t('chat.read')}</TooltipContent>
-            </Tooltip>
-            <audio src="" ref={ref}></audio>
+      <div className="inline-flex items-center gap-1">
+        <ToggleGroup
+          type={'single'}
+          size="sm"
+          variant="outline"
+          className="space-x-1"
+        >
+          <ToggleGroupItem value="a">
+            <CopyToClipboard
+              text={copyText}
+              className="border-none hover:!bg-transparent"
+              avoidButtonWrapper
+            ></CopyToClipboard>
           </ToggleGroupItem>
-        )}
-        {showLikeButton && (
-          <>
-            <ToggleGroupItem value="c" onClick={handleLike}>
-              <LikeOutlined />
+          {showLoudspeaker && (
+            <ToggleGroupItem value="b" onClick={handleRead}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    {isPlaying ? <PauseCircleOutlined /> : <SoundOutlined />}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>{t('chat.read')}</TooltipContent>
+              </Tooltip>
+              <audio src="" ref={ref}></audio>
             </ToggleGroupItem>
-            <ToggleGroupItem value="d" onClick={showModal}>
-              <DislikeOutlined />
+          )}
+          {prompt && (
+            <ToggleGroupItem value="e" onClick={showPromptModal}>
+              <PromptIcon style={{ fontSize: '16px' }} />
             </ToggleGroupItem>
-          </>
-        )}
-        {prompt && (
-          <ToggleGroupItem value="e" onClick={showPromptModal}>
-            <PromptIcon style={{ fontSize: '16px' }} />
-          </ToggleGroupItem>
-        )}
-        {showLog && (
-          <ToggleGroupItem value="f" onClick={handleShowLogSheet}>
-            <Tooltip>
-              <TooltipTrigger asChild>
+          )}
+          {showLog && (
+            <ToggleGroupItem value="f" onClick={handleShowLogSheet}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <NotebookText className="size-4" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>{t('flow.log')}</TooltipContent>
+              </Tooltip>
+            </ToggleGroupItem>
+          )}
+          {!!attachment?.doc_id && (
+            <ToggleGroupItem
+              value="g"
+              onClick={async () => {
+                try {
+                  const response = await downloadAgentFile({
+                    docId: attachment.doc_id,
+                    ext: attachment.format,
+                  });
+                  const blob = new Blob([response.data], {
+                    type: response.data.type,
+                  });
+                  downloadFileFromBlob(blob, attachment.file_name);
+                } catch (error) {
+                  console.error('Download failed:', error);
+                }
+              }}
+            >
+              <Download size={16} />
+            </ToggleGroupItem>
+          )}
+        </ToggleGroup>
+
+        {isFeedbackEnabled && (
+          <div className="inline-flex items-center gap-1">
+            {isMultiCriteria ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className={cn(
+                  'h-8 px-2.5 gap-1 text-xs',
+                  localThumbup === true
+                    ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-500'
+                    : localThumbup === false
+                      ? 'border-rose-500/50 bg-rose-500/15 text-rose-500'
+                      : 'border-border-button text-text-secondary hover:text-text-primary',
+                )}
+                onClick={() => {
+                  setPendingThumbup(localThumbup);
+                  showModal();
+                }}
+              >
+                <Star
+                  className={cn(
+                    'size-3.5',
+                    localDetail?.csat_score
+                      ? 'fill-amber-400 text-amber-400'
+                      : '',
+                  )}
+                />
                 <span>
-                  <NotebookText className="size-4" />
+                  {localDetail?.csat_score
+                    ? `${localDetail.csat_score}/5`
+                    : 'Đánh giá'}
                 </span>
-              </TooltipTrigger>
-              <TooltipContent>{t('flow.log')}</TooltipContent>
-            </Tooltip>
-          </ToggleGroupItem>
+              </Button>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    'h-8 w-8 p-0',
+                    localThumbup === true &&
+                      'border-emerald-500 bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/20',
+                  )}
+                  onClick={handleLike}
+                >
+                  {localThumbup === true ? <LikeFilled /> : <LikeOutlined />}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    'h-8 w-8 p-0',
+                    localThumbup === false &&
+                      'border-rose-500 bg-rose-500/15 text-rose-500 hover:bg-rose-500/20',
+                  )}
+                  onClick={handleDislike}
+                >
+                  {localThumbup === false ? (
+                    <DislikeFilled />
+                  ) : (
+                    <DislikeOutlined />
+                  )}
+                </Button>
+              </>
+            )}
+          </div>
         )}
-        {!!attachment?.doc_id && (
-          <ToggleGroupItem
-            value="g"
-            onClick={async () => {
-              try {
-                const response = await downloadAgentFile({
-                  docId: attachment.doc_id,
-                  ext: attachment.format,
-                });
-                const blob = new Blob([response.data], {
-                  type: response.data.type,
-                });
-                downloadFileFromBlob(blob, attachment.file_name);
-              } catch (error) {
-                console.error('Download failed:', error);
-              }
-            }}
-          >
-            <Download size={16} />
-          </ToggleGroupItem>
-        )}
-      </ToggleGroup>
+      </div>
       {visible && (
         <FeedbackDialog
           visible={visible}
           hideModal={hideModal}
           onOk={onFeedbackOk}
           loading={loading}
+          feedbackConfig={feedbackConfig}
+          initialFeedback={localFeedback}
+          initialThumbup={pendingThumbup}
+          initialDetail={localDetail}
         ></FeedbackDialog>
       )}
       {promptVisible && (

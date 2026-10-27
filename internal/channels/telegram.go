@@ -40,23 +40,33 @@ const (
 	telegramPollTimeout       = 30 * time.Second
 	telegramHTTPTimeout       = 40 * time.Second
 	telegramReconnectDelay    = 3 * time.Second
+	telegramTypingInterval    = 4 * time.Second
+	maxTelegramThreadCache    = 10000
 )
 
 type telegramAccount struct {
-	AccountID  string
-	Token      string
-	APIBaseURL string
+	AccountID         string
+	Token             string
+	APIBaseURL        string
+	TypingInterval    time.Duration
+	AllowGroupPrivacy bool
+	BotUsername       string
 }
 
 type telegramChannel struct {
 	account telegramAccount
 
-	mu      sync.Mutex
-	cancel  context.CancelFunc
-	done    chan struct{}
-	handler core.MessageHandler
-	client  *http.Client
-	offset  int64
+	mu              sync.Mutex
+	cancel          context.CancelFunc
+	done            chan struct{}
+	handler         core.MessageHandler
+	callbackHandler core.CallbackHandler
+	client          *http.Client
+	offset          int64
+	botUsername     string
+	botID           int64
+	threadRootByMsg map[string]string
+	threadOrder     []string
 }
 
 type telegramAPIResponse struct {
@@ -79,30 +89,58 @@ func (e *telegramTransportError) Unwrap() error {
 }
 
 type telegramUpdate struct {
-	UpdateID          int64            `json:"update_id"`
-	Message           *telegramMessage `json:"message"`
-	EditedMessage     *telegramMessage `json:"edited_message"`
-	ChannelPost       *telegramMessage `json:"channel_post"`
-	EditedChannelPost *telegramMessage `json:"edited_channel_post"`
+	UpdateID          int64                  `json:"update_id"`
+	Message           *telegramMessage       `json:"message"`
+	EditedMessage     *telegramMessage       `json:"edited_message"`
+	ChannelPost       *telegramMessage       `json:"channel_post"`
+	EditedChannelPost *telegramMessage       `json:"edited_channel_post"`
+	CallbackQuery     *telegramCallbackQuery `json:"callback_query"`
 	Raw               map[string]any
 }
 
+type telegramCallbackQuery struct {
+	ID      string           `json:"id"`
+	From    *telegramUser    `json:"from"`
+	Message *telegramMessage `json:"message"`
+	Data    string           `json:"data"`
+}
+
 type telegramMessage struct {
-	MessageID int64         `json:"message_id"`
-	From      *telegramUser `json:"from"`
-	Chat      telegramChat  `json:"chat"`
-	Text      string        `json:"text"`
-	Caption   string        `json:"caption"`
+	MessageID       int64                   `json:"message_id"`
+	MessageThreadID int64                   `json:"message_thread_id"`
+	From            *telegramUser           `json:"from"`
+	Chat            telegramChat            `json:"chat"`
+	ReplyToMessage  *telegramMessage        `json:"reply_to_message"`
+	Quote           *telegramTextQuote      `json:"quote"`
+	Text            string                  `json:"text"`
+	Caption         string                  `json:"caption"`
+	Entities        []telegramMessageEntity `json:"entities"`
+	CaptionEntities []telegramMessageEntity `json:"caption_entities"`
+}
+
+type telegramTextQuote struct {
+	Text string `json:"text"`
+}
+
+type telegramMessageEntity struct {
+	Type   string        `json:"type"`
+	Offset int           `json:"offset"`
+	Length int           `json:"length"`
+	User   *telegramUser `json:"user"`
 }
 
 type telegramUser struct {
-	ID    int64 `json:"id"`
-	IsBot bool  `json:"is_bot"`
+	ID        int64  `json:"id"`
+	IsBot     bool   `json:"is_bot"`
+	Username  string `json:"username"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
 }
 
 type telegramChat struct {
-	ID   int64  `json:"id"`
-	Type string `json:"type"`
+	ID    int64  `json:"id"`
+	Type  string `json:"type"`
+	Title string `json:"title"`
 }
 
 // newTelegramChannel creates a Telegram channel with default API settings.
@@ -112,9 +150,12 @@ func newTelegramChannel(account telegramAccount) *telegramChannel {
 	if account.APIBaseURL == "" {
 		account.APIBaseURL = defaultTelegramAPIBaseURL
 	}
+	account.BotUsername = normalizeTelegramUsername(account.BotUsername)
 	return &telegramChannel{
-		account: account,
-		client:  &http.Client{Timeout: telegramHTTPTimeout},
+		account:         account,
+		client:          &http.Client{Timeout: telegramHTTPTimeout},
+		botUsername:     account.BotUsername,
+		threadRootByMsg: make(map[string]string),
 	}
 }
 
@@ -128,10 +169,14 @@ func newTelegramChannelFromConfig(accountID string, cfg map[string]any) (*telegr
 	// APIBaseURL is intentionally optional and is useful for Bot API-compatible
 	// proxies and tests. The Python implementation defaults to api.telegram.org.
 	baseURL := firstString(cfg, "api_base_url", "base_url")
+	allowGroupPrivacy := telegramBoolFromConfig(cfg, false, "allowGroupPrivacy", "allow_group_privacy")
+	botUsername := firstString(cfg, "bot_username", "username")
 	return newTelegramChannel(telegramAccount{
-		AccountID:  accountID,
-		Token:      token,
-		APIBaseURL: baseURL,
+		AccountID:         accountID,
+		Token:             token,
+		APIBaseURL:        baseURL,
+		AllowGroupPrivacy: allowGroupPrivacy,
+		BotUsername:       botUsername,
 	}), nil
 }
 
@@ -150,6 +195,13 @@ func (c *telegramChannel) SetMessageHandler(handler core.MessageHandler) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.handler = handler
+}
+
+// SetCallbackHandler installs the callback_query handler for inline rating buttons.
+func (c *telegramChannel) SetCallbackHandler(handler core.CallbackHandler) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.callbackHandler = handler
 }
 
 // Start starts Telegram long polling in the background.
@@ -211,7 +263,8 @@ func (c *telegramChannel) Send(ctx context.Context, msg core.OutgoingMessage) er
 		"chat_id": chatID,
 		"text":    msg.Text,
 	}
-	if replyID := strings.TrimSpace(msg.ReplyToMessageID); replyID != "" {
+	replyID := strings.TrimSpace(msg.ReplyToMessageID)
+	if replyID != "" {
 		if messageID, parseErr := strconv.ParseInt(replyID, 10, 64); parseErr == nil {
 			payload["reply_parameters"] = map[string]any{
 				"message_id":                  messageID,
@@ -219,10 +272,46 @@ func (c *telegramChannel) Send(ctx context.Context, msg core.OutgoingMessage) er
 			}
 		}
 	}
-	if err := c.callAPI(ctx, "sendMessage", payload, nil); err != nil {
+	if len(msg.InlineButtons) > 0 {
+		payload["reply_markup"] = map[string]any{
+			"inline_keyboard": buildTelegramInlineKeyboard(msg.InlineButtons),
+		}
+	}
+	var sentMsg struct {
+		MessageID int64 `json:"message_id"`
+	}
+	if err := c.callAPI(ctx, "sendMessage", payload, &sentMsg); err != nil {
 		common.Error("telegram: send failed", err, zap.String("account_id", c.account.AccountID))
+		return nil
+	}
+	if sentMsg.MessageID > 0 && replyID != "" {
+		c.bindBotReplyThread(chatID, replyID, strconv.FormatInt(sentMsg.MessageID, 10))
 	}
 	return nil
+}
+
+func buildTelegramInlineKeyboard(rows [][]core.InlineButton) [][]map[string]any {
+	keyboard := make([][]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		btnRow := make([]map[string]any, 0, len(row))
+		for _, btn := range row {
+			if btn.Text == "" || btn.CallbackData == "" {
+				continue
+			}
+			cbData := btn.CallbackData
+			if len(cbData) > 64 {
+				cbData = cbData[:64]
+			}
+			btnRow = append(btnRow, map[string]any{
+				"text":          btn.Text,
+				"callback_data": cbData,
+			})
+		}
+		if len(btnRow) > 0 {
+			keyboard = append(keyboard, btnRow)
+		}
+	}
+	return keyboard
 }
 
 // run drops queued updates and consumes Telegram updates until stopped.
@@ -291,6 +380,10 @@ func (c *telegramChannel) getUpdates(ctx context.Context) ([]telegramUpdate, err
 // handleUpdate maps Telegram's effective message into the common channel model.
 // Telegram -> AI
 func (c *telegramChannel) handleUpdate(ctx context.Context, update telegramUpdate) {
+	if update.CallbackQuery != nil {
+		c.handleCallbackUpdate(ctx, update.CallbackQuery)
+		return
+	}
 	msg := update.effectiveMessage()
 	if msg == nil {
 		return
@@ -303,22 +396,78 @@ func (c *telegramChannel) handleUpdate(ctx context.Context, update telegramUpdat
 	}
 
 	text := msg.Text
+	entities := msg.Entities
 	if text == "" {
 		text = msg.Caption
+		entities = msg.CaptionEntities
+	}
+	chatType := telegramChatType(msg.Chat.Type)
+	effectiveReply := isEffectiveTelegramReply(msg)
+	repliedToBot := false
+	if chatType == "group" {
+		needBotIdentity := !c.account.AllowGroupPrivacy || strings.Contains(text, "@") || effectiveReply
+		var botUsername string
+		var botID int64
+		if needBotIdentity {
+			botUsername, botID = c.ensureBotIdentity(ctx)
+		}
+		mentioned, cleanedText := matchAndStripTelegramBotMention(text, entities, botUsername, botID)
+		if effectiveReply {
+			repliedToBot = isTelegramReplyToBot(msg.ReplyToMessage, botUsername, botID)
+		}
+		if !c.account.AllowGroupPrivacy && !mentioned && !repliedToBot {
+			return
+		}
+		if mentioned && strings.TrimSpace(cleanedText) != "" {
+			text = cleanedText
+		}
 	}
 	senderID := strconv.FormatInt(msg.Chat.ID, 10)
+	senderName := ""
+	senderUsername := ""
 	if msg.From != nil {
 		senderID = strconv.FormatInt(msg.From.ID, 10)
+		senderName = telegramUserFullName(msg.From)
+		senderUsername = strings.TrimPrefix(strings.TrimSpace(msg.From.Username), "@")
 	}
+
+	var replyToMsgID, replyToSender, replyToText, quoteText string
+	if msg.Quote != nil {
+		quoteText = strings.TrimSpace(msg.Quote.Text)
+	}
+	if effectiveReply && msg.ReplyToMessage != nil {
+		reply := msg.ReplyToMessage
+		replyToMsgID = strconv.FormatInt(reply.MessageID, 10)
+		replyToText = strings.TrimSpace(reply.Text)
+		if replyToText == "" {
+			replyToText = strings.TrimSpace(reply.Caption)
+		}
+		replyToSender = telegramUserDisplayLabel(reply.From)
+	}
+
+	threadID := ""
+	if chatType == "group" {
+		threadID = c.resolveGroupThreadID(msg.Chat.ID, msg.MessageID, replyToMsgID)
+	}
+
 	incoming := core.IncomingMessage{
-		Channel:   c.ChannelID(),
-		AccountID: c.account.AccountID,
-		ChatID:    strconv.FormatInt(msg.Chat.ID, 10),
-		ChatType:  telegramChatType(msg.Chat.Type),
-		MessageID: strconv.FormatInt(msg.MessageID, 10),
-		SenderID:  senderID,
-		Text:      text,
-		Raw:       update.Raw,
+		Channel:          c.ChannelID(),
+		AccountID:        c.account.AccountID,
+		ChatID:           strconv.FormatInt(msg.Chat.ID, 10),
+		ChatType:         chatType,
+		ChatTitle:        strings.TrimSpace(msg.Chat.Title),
+		MessageID:        strconv.FormatInt(msg.MessageID, 10),
+		ThreadID:         threadID,
+		SenderID:         senderID,
+		SenderName:       senderName,
+		SenderUsername:   senderUsername,
+		ReplyToMessageID: replyToMsgID,
+		ReplyToSender:    replyToSender,
+		ReplyToText:      replyToText,
+		ReplyToIsBot:     repliedToBot,
+		QuoteText:        quoteText,
+		Text:             text,
+		Raw:              update.Raw,
 	}
 
 	c.mu.Lock()
@@ -327,8 +476,110 @@ func (c *telegramChannel) handleUpdate(ctx context.Context, update telegramUpdat
 	if handler == nil {
 		return
 	}
+
+	stopTyping := c.startTyping(ctx, msg.Chat.ID, msg.Chat.Type)
+	defer stopTyping()
+
 	if err := handler(ctx, incoming); err != nil {
 		common.Error("telegram: message handler error", err, zap.String("account_id", c.account.AccountID))
+	}
+}
+
+// startTyping sends Telegram's "typing" chat action immediately and refreshes it
+// periodically until the returned cancel function is called or ctx is done.
+func (c *telegramChannel) startTyping(ctx context.Context, chatID int64, rawChatType string) context.CancelFunc {
+	if rawChatType == "channel" {
+		return func() {}
+	}
+	typingCtx, cancel := context.WithCancel(ctx)
+	interval := c.account.TypingInterval
+	if interval <= 0 {
+		interval = telegramTypingInterval
+	}
+
+	c.sendTypingAction(typingCtx, chatID)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-typingCtx.Done():
+				return
+			case <-ticker.C:
+				c.sendTypingAction(typingCtx, chatID)
+			}
+		}
+	}()
+
+	return func() {
+		cancel()
+		<-done
+	}
+}
+
+func (c *telegramChannel) sendTypingAction(ctx context.Context, chatID int64) {
+	if ctx.Err() != nil {
+		return
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_ = c.callAPI(reqCtx, "sendChatAction", map[string]any{
+		"chat_id": chatID,
+		"action":  "typing",
+	}, nil)
+}
+
+func (c *telegramChannel) handleCallbackUpdate(ctx context.Context, cb *telegramCallbackQuery) {
+	c.mu.Lock()
+	cbHandler := c.callbackHandler
+	c.mu.Unlock()
+	if cbHandler == nil || cb == nil {
+		return
+	}
+	var chatID, msgID, senderID string
+	if cb.Message != nil {
+		chatID = strconv.FormatInt(cb.Message.Chat.ID, 10)
+		msgID = strconv.FormatInt(cb.Message.MessageID, 10)
+	}
+	if cb.From != nil {
+		senderID = strconv.FormatInt(cb.From.ID, 10)
+	}
+	res, err := cbHandler(ctx, core.CallbackQuery{
+		ID:        cb.ID,
+		Channel:   c.ChannelID(),
+		AccountID: c.account.AccountID,
+		ChatID:    chatID,
+		MessageID: msgID,
+		SenderID:  senderID,
+		Data:      cb.Data,
+	})
+	if err != nil {
+		common.Error("telegram: callback handler error", err, zap.String("account_id", c.account.AccountID))
+		_ = c.callAPI(ctx, "answerCallbackQuery", map[string]any{
+			"callback_query_id": cb.ID,
+			"text":              "Không thể ghi nhận đánh giá lúc này.",
+		}, nil)
+		return
+	}
+	toast := "Đã ghi nhận đánh giá!"
+	if res != nil && res.ToastText != "" {
+		toast = res.ToastText
+	}
+	_ = c.callAPI(ctx, "answerCallbackQuery", map[string]any{
+		"callback_query_id": cb.ID,
+		"text":              toast,
+	}, nil)
+	if res != nil && len(res.InlineButtons) > 0 && cb.Message != nil {
+		_ = c.callAPI(ctx, "editMessageReplyMarkup", map[string]any{
+			"chat_id":    cb.Message.Chat.ID,
+			"message_id": cb.Message.MessageID,
+			"reply_markup": map[string]any{
+				"inline_keyboard": buildTelegramInlineKeyboard(res.InlineButtons),
+			},
+		}, nil)
 	}
 }
 
@@ -411,4 +662,281 @@ func waitForTelegramRetry(ctx context.Context) bool {
 	case <-timer.C:
 		return true
 	}
+}
+
+func (c *telegramChannel) ensureBotIdentity(ctx context.Context) (string, int64) {
+	c.mu.Lock()
+	username := c.botUsername
+	botID := c.botID
+	c.mu.Unlock()
+	if username != "" || botID != 0 {
+		return username, botID
+	}
+
+	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	var me telegramUser
+	if err := c.callAPI(reqCtx, "getMe", map[string]any{}, &me); err != nil {
+		common.Warn("telegram: failed to fetch bot identity via getMe", zap.String("account_id", c.account.AccountID), zap.Error(err))
+		return "", 0
+	}
+
+	username = normalizeTelegramUsername(me.Username)
+	botID = me.ID
+
+	c.mu.Lock()
+	if c.botUsername == "" {
+		c.botUsername = username
+	}
+	if c.botID == 0 {
+		c.botID = botID
+	}
+	username = c.botUsername
+	botID = c.botID
+	c.mu.Unlock()
+
+	return username, botID
+}
+
+func normalizeTelegramUsername(username string) string {
+	return strings.ToLower(strings.TrimPrefix(strings.TrimSpace(username), "@"))
+}
+
+func isTelegramUsernameChar(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '_'
+}
+
+func matchAndStripTelegramBotMention(
+	text string,
+	entities []telegramMessageEntity,
+	botUsername string,
+	botID int64,
+) (bool, string) {
+	botUsername = normalizeTelegramUsername(botUsername)
+	mentioned := false
+
+	if botID != 0 {
+		for _, ent := range entities {
+			if ent.Type == "text_mention" && ent.User != nil && ent.User.ID == botID {
+				mentioned = true
+				break
+			}
+		}
+	}
+
+	if botUsername == "" {
+		return mentioned, text
+	}
+
+	target := "@" + botUsername
+	targetLen := len(target)
+	if len(text) < targetLen {
+		return mentioned, text
+	}
+
+	var b strings.Builder
+	b.Grow(len(text))
+	lastCopied := 0
+	i := 0
+	for i <= len(text)-targetLen {
+		if text[i] == '@' && strings.EqualFold(text[i:i+targetLen], target) {
+			endIdx := i + targetLen
+			afterOK := endIdx == len(text) || !isTelegramUsernameChar(text[endIdx])
+
+			beforeOK := i == 0 || !isTelegramUsernameChar(text[i-1])
+			if !beforeOK {
+				wordStart := i - 1
+				for wordStart > 0 && isTelegramUsernameChar(text[wordStart-1]) {
+					wordStart--
+				}
+				if wordStart > 0 && text[wordStart-1] == '/' {
+					beforeOK = true
+				}
+			}
+
+			if beforeOK && afterOK {
+				mentioned = true
+				b.WriteString(text[lastCopied:i])
+				lastCopied = endIdx
+				i = endIdx
+				continue
+			}
+		}
+		i++
+	}
+
+	if !mentioned {
+		return false, text
+	}
+	b.WriteString(text[lastCopied:])
+	cleaned := strings.TrimSpace(b.String())
+	return true, cleaned
+}
+
+func telegramBoolFromConfig(cfg map[string]any, defaultValue bool, keys ...string) bool {
+	if cfg == nil {
+		return defaultValue
+	}
+	for _, key := range keys {
+		raw, exists := cfg[key]
+		if !exists || raw == nil {
+			continue
+		}
+		switch v := raw.(type) {
+		case bool:
+			return v
+		case string:
+			trimmed := strings.ToLower(strings.TrimSpace(v))
+			switch trimmed {
+			case "true", "1", "yes", "on":
+				return true
+			case "false", "0", "no", "off":
+				return false
+			}
+		case int:
+			return v != 0
+		case int64:
+			return v != 0
+		case float64:
+			return v != 0
+		}
+	}
+	return defaultValue
+}
+
+func isEffectiveTelegramReply(msg *telegramMessage) bool {
+	if msg == nil || msg.ReplyToMessage == nil || msg.ReplyToMessage.MessageID == 0 {
+		return false
+	}
+	reply := msg.ReplyToMessage
+	replyText := strings.TrimSpace(reply.Text)
+	if replyText == "" {
+		replyText = strings.TrimSpace(reply.Caption)
+	}
+	// In Telegram forum supergroups, un-replied messages inside a topic carry a
+	// synthetic ReplyToMessage whose message_id equals message_thread_id and has no text.
+	if msg.MessageThreadID != 0 && reply.MessageID == msg.MessageThreadID && replyText == "" {
+		return false
+	}
+	return true
+}
+
+func isTelegramReplyToBot(reply *telegramMessage, botUsername string, botID int64) bool {
+	if reply == nil || reply.From == nil {
+		return false
+	}
+	if botID != 0 && reply.From.ID == botID {
+		return true
+	}
+	botUsername = normalizeTelegramUsername(botUsername)
+	if botUsername != "" && normalizeTelegramUsername(reply.From.Username) == botUsername {
+		return true
+	}
+	return false
+}
+
+func telegramUserFullName(u *telegramUser) string {
+	if u == nil {
+		return ""
+	}
+	first := strings.TrimSpace(u.FirstName)
+	last := strings.TrimSpace(u.LastName)
+	if first != "" && last != "" {
+		return first + " " + last
+	}
+	if first != "" {
+		return first
+	}
+	return last
+}
+
+func telegramUserDisplayLabel(u *telegramUser) string {
+	if u == nil {
+		return ""
+	}
+	username := strings.TrimPrefix(strings.TrimSpace(u.Username), "@")
+	fullName := telegramUserFullName(u)
+	if username != "" && fullName != "" {
+		return "@" + username + " (" + fullName + ")"
+	}
+	if username != "" {
+		return "@" + username
+	}
+	if fullName != "" {
+		return fullName
+	}
+	if u.ID != 0 {
+		return strconv.FormatInt(u.ID, 10)
+	}
+	return ""
+}
+
+func (c *telegramChannel) resolveGroupThreadID(chatID int64, messageID int64, replyToMsgID string) string {
+	chatIDStr := strconv.FormatInt(chatID, 10)
+	msgIDStr := strconv.FormatInt(messageID, 10)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.threadRootByMsg == nil {
+		c.threadRootByMsg = make(map[string]string)
+	}
+
+	replyToMsgID = strings.TrimSpace(replyToMsgID)
+	if replyToMsgID != "" {
+		parentKey := chatIDStr + ":" + replyToMsgID
+		rootID := c.threadRootByMsg[parentKey]
+		if rootID == "" {
+			rootID = replyToMsgID
+			c.rememberThreadRootLocked(parentKey, rootID)
+		}
+		if msgIDStr != "0" {
+			c.rememberThreadRootLocked(chatIDStr+":"+msgIDStr, rootID)
+		}
+		return rootID
+	}
+
+	if msgIDStr == "0" {
+		return ""
+	}
+	c.rememberThreadRootLocked(chatIDStr+":"+msgIDStr, msgIDStr)
+	return msgIDStr
+}
+
+func (c *telegramChannel) bindBotReplyThread(chatID int64, replyToMsgID, botMsgID string) {
+	replyToMsgID = strings.TrimSpace(replyToMsgID)
+	botMsgID = strings.TrimSpace(botMsgID)
+	if replyToMsgID == "" || botMsgID == "" {
+		return
+	}
+	chatIDStr := strconv.FormatInt(chatID, 10)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.threadRootByMsg == nil {
+		c.threadRootByMsg = make(map[string]string)
+	}
+	parentKey := chatIDStr + ":" + replyToMsgID
+	rootID := c.threadRootByMsg[parentKey]
+	if rootID == "" {
+		rootID = replyToMsgID
+		c.rememberThreadRootLocked(parentKey, rootID)
+	}
+	c.rememberThreadRootLocked(chatIDStr+":"+botMsgID, rootID)
+}
+
+func (c *telegramChannel) rememberThreadRootLocked(key, rootID string) {
+	if _, exists := c.threadRootByMsg[key]; !exists {
+		if len(c.threadOrder) >= maxTelegramThreadCache {
+			evictCount := maxTelegramThreadCache / 10
+			if evictCount < 1 {
+				evictCount = 1
+			}
+			for _, oldKey := range c.threadOrder[:evictCount] {
+				delete(c.threadRootByMsg, oldKey)
+			}
+			c.threadOrder = c.threadOrder[evictCount:]
+		}
+		c.threadOrder = append(c.threadOrder, key)
+	}
+	c.threadRootByMsg[key] = rootID
 }

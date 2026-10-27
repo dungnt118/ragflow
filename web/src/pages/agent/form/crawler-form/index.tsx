@@ -68,14 +68,52 @@ export function CrawlerExtractTypeFormField() {
 }
 
 export const CrawlerFormSchema = {
-  proxy: z.string().url(),
+  proxy: z.string().url().optional().or(z.literal('')),
   extract_type: z.string(),
+  max_depth: z.coerce.number().min(0).max(3).optional(),
+  max_pages: z.coerce.number().min(1).max(50).optional(),
 };
 
 const FormSchema = z.object({
   query: z.string().optional(),
   ...CrawlerFormSchema,
 });
+
+export function CrawlerDepthFormFields() {
+  const { t } = useTranslate('flow');
+  const form = useFormContext();
+
+  return (
+    <>
+      <FormField
+        control={form.control}
+        name="max_depth"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('crawlerMaxDepth', { defaultValue: 'Độ sâu quét liên kết (Max Depth: 0-3)' })}</FormLabel>
+            <FormControl>
+              <Input type="number" min={0} max={3} {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="max_pages"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('crawlerMaxPages', { defaultValue: 'Số trang tối đa (Max Pages: 1-50)' })}</FormLabel>
+            <FormControl>
+              <Input type="number" min={1} max={50} {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </>
+  );
+}
 
 function CrawlerForm({ node }: INextOperatorForm) {
   const form = useForm<z.infer<typeof FormSchema>>({
@@ -95,8 +133,9 @@ function CrawlerForm({ node }: INextOperatorForm) {
         }}
       >
         <QueryVariable></QueryVariable>
-        <CrawlerProxyFormField></CrawlerProxyFormField>
         <CrawlerExtractTypeFormField></CrawlerExtractTypeFormField>
+        <CrawlerDepthFormFields></CrawlerDepthFormFields>
+        <CrawlerProxyFormField></CrawlerProxyFormField>
       </form>
     </Form>
   );

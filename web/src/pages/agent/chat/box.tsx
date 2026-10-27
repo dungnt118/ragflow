@@ -35,7 +35,35 @@ function AgentChatBox() {
     findReferenceByMessageId,
     appendUploadResponseList,
     removeFile,
+    streamSessionId,
+    requestedSessionId,
+    setDerivedMessages: setLocalDerivedMessages,
   } = useSendAgentMessage({ refetch });
+
+  const agentFeedbackConfig = canvasInfo?.dsl?.feedback_config;
+  const activeAgentSessionId =
+    streamSessionId ||
+    requestedSessionId ||
+    derivedMessages?.find((m) => m.session_id || m.conversationId)?.session_id ||
+    derivedMessages?.find((m) => m.session_id || m.conversationId)
+      ?.conversationId ||
+    '';
+
+  const handleFeedbackSuccess = useCallback(
+    (
+      messageId: string,
+      patch: {
+        thumbup?: boolean;
+        feedback?: string;
+        feedback_detail?: any;
+      },
+    ) => {
+      setLocalDerivedMessages((prev) =>
+        prev.map((m) => (m.id === messageId ? { ...m, ...patch } : m)),
+      );
+    },
+    [setLocalDerivedMessages],
+  );
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
@@ -119,7 +147,17 @@ function AgentChatBox() {
                   reference={findReferenceByMessageId(message.id)}
                   clickDocumentButton={clickDocumentButton}
                   index={i}
-                  showLikeButton={false}
+                  showLikeButton={
+                    agentFeedbackConfig?.enabled !== undefined
+                      ? Boolean(agentFeedbackConfig.enabled)
+                      : false
+                  }
+                  feedbackConfig={agentFeedbackConfig}
+                  sessionId={activeAgentSessionId}
+                  isAgent={true}
+                  targetId={canvasInfo?.id}
+                  channel="web"
+                  onFeedbackSuccess={handleFeedbackSuccess}
                   sendLoading={sendLoading && derivedMessages.length - 1 === i}
                 >
                   {message.role === MessageType.Assistant &&

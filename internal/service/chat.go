@@ -869,6 +869,8 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 		}
 		req["kb_ids"] = kbIDs
 		delete(req, "dataset_ids")
+	} else {
+		delete(req, "kb_ids")
 	}
 
 	var llmSetting map[string]interface{}
@@ -883,7 +885,7 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 	}
 
 	if value, ok := req["llm_id"]; ok {
-		llmID := fmt.Sprint(value)
+		llmID := stringFromValue(value)
 		tenantLLMID, err := s.resolveRESTLLMID(ctx, llmID, userID, llmSetting)
 		if err != nil {
 			return nil, err
@@ -894,10 +896,11 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 	}
 
 	if value, ok := req["decision_id"]; ok {
-		decisionID := fmt.Sprint(value)
+		decisionID := stringFromValue(value)
 		if decisionID == "" {
 			// Clearing the override is meaningful: it falls back to the tenant
 			// default rather than disabling the gate for this chat.
+			req["decision_id"] = nil
 			req["tenant_decision_id"] = nil
 		} else {
 			modelFactory := NewModelFactory()
@@ -905,18 +908,22 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 			if err != nil {
 				return nil, fmt.Errorf("`decision_id` %s doesn't exist", decisionID)
 			}
+			req["decision_id"] = decisionID
 			req["tenant_decision_id"] = target.ID
 		}
 	}
 
 	if value, ok := req["rerank_id"]; ok {
-		rerankID := fmt.Sprint(value)
+		rerankID := stringFromValue(value)
+		req["rerank_id"] = rerankID
 		tenantRerankID, err := s.resolveRESTRerankID(ctx, rerankID, userID)
 		if err != nil {
 			return nil, err
 		}
 		if tenantRerankID != "" {
 			req["tenant_rerank_id"] = tenantRerankID
+		} else if rerankID == "" {
+			req["tenant_rerank_id"] = nil
 		}
 	}
 

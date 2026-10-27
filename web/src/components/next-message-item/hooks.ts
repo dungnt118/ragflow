@@ -14,18 +14,41 @@
  *  limitations under the License.
  */
 
-// import { useDeleteMessage, useFeedback } from '@/hooks/chat-hooks';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { IRemoveMessageById, useSpeechWithSse } from '@/hooks/logic-hooks';
-import { useDeleteMessage, useFeedback } from '@/hooks/use-chat-request';
-import { IFeedbackRequestBody } from '@/interfaces/request/chat';
+import {
+  IUseFeedbackOptions,
+  useDeleteMessage,
+  useFeedback,
+  useGetChatSearchParams,
+} from '@/hooks/use-chat-request';
+import { IFeedbackDetail, IFeedbackRequestBody } from '@/interfaces/request/chat';
+import { useChatStreamStore } from '@/pages/next-chats/chat-stream/store';
 import { hexStringToUint8Array } from '@/utils/common-util';
 import { SpeechPlayer } from 'openai-speech-stream-player';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-export const useSendFeedback = (messageId: string) => {
+export interface IUseSendFeedbackParams extends IUseFeedbackOptions {
+  onFeedbackSuccess?: (
+    messageId: string,
+    patch: {
+      thumbup?: boolean;
+      feedback?: string;
+      feedback_detail?: IFeedbackDetail;
+    },
+  ) => void;
+}
+
+export const useSendFeedback = (
+  messageId: string,
+  options?: IUseSendFeedbackParams,
+) => {
   const { visible, hideModal, showModal } = useSetModalState();
-  const { feedback, loading } = useFeedback();
+  const { feedback, loading } = useFeedback(options);
+  const { conversationId } = useGetChatSearchParams();
+  const updateMessageFeedback = useChatStreamStore(
+    (state) => state.updateMessageFeedback,
+  );
 
   const onFeedbackOk = useCallback(
     async (params: IFeedbackRequestBody) => {
@@ -34,11 +57,36 @@ export const useSendFeedback = (messageId: string) => {
         messageId: messageId,
       });
 
-      if (ret === 0) {
+      const code = typeof ret === 'number' ? ret : ret?.code;
+      if (code === 0) {
+        const serverDetail =
+          typeof ret === 'object' ? ret?.data?.feedback_detail : undefined;
+        const patch = {
+          thumbup:
+            typeof ret === 'object' && ret?.data?.thumbup !== undefined
+              ? Boolean(ret.data.thumbup)
+              : params.thumbup,
+          feedback: params.feedback,
+          feedback_detail:
+            serverDetail ||
+            (params.csat_score !== undefined || params.criteria !== undefined
+              ? {
+                  csat_score: params.csat_score,
+                  criteria: params.criteria,
+                  comment: params.feedback,
+                  channel: params.channel || options?.channel || 'web',
+                }
+              : undefined),
+        };
+        const targetSessionId = options?.sessionId || conversationId;
+        if (targetSessionId) {
+          updateMessageFeedback(targetSessionId, messageId, patch);
+        }
+        options?.onFeedbackSuccess?.(messageId, patch);
         hideModal();
       }
     },
-    [feedback, hideModal, messageId],
+    [feedback, hideModal, messageId, options, conversationId, updateMessageFeedback],
   );
 
   return {

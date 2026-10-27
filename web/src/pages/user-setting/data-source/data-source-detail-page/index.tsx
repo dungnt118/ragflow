@@ -32,12 +32,14 @@ import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router';
 import {
   DataSourceFormDefaultValues,
+  DataSourceKey,
   getCommonExtraDefaultValues,
   getDataSourceFormBaseFields,
   getDataSourceFieldsWithExtras,
   mergeDataSourceFormValues,
   useDataSourceInfo,
 } from '../constant';
+import { GithubWorkflowGuideModal } from '../component/github-workflow-guide-modal';
 import {
   useAddDataSource,
   useFetchDataSourceDetail,
@@ -46,6 +48,7 @@ import {
 } from '../hooks';
 import { DataSourceLogsTable } from './log-table';
 import BackButton from '@/components/back-button';
+import { FileCode2 } from 'lucide-react';
 
 const SourceDetailPage = () => {
   const { t } = useTranslation();
@@ -64,6 +67,16 @@ const SourceDetailPage = () => {
   }, [detail, dataSourceInfo]);
 
   const [isDirty, setIsDirty] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [guideFormSnapshot, setGuideFormSnapshot] = useState<FieldValues>({});
+
+  const isGithubSource = detail?.source === DataSourceKey.GITHUB;
+
+  const handleOpenGithubGuide = useCallback(() => {
+    const liveValues = formRef.current?.getValues?.() || {};
+    setGuideFormSnapshot(liveValues);
+    setGuideOpen(true);
+  }, []);
 
   const customFields = useMemo(() => {
     return [
@@ -245,6 +258,19 @@ const SourceDetailPage = () => {
             {detailInfo?.icon}
             {detail?.name}
           </CardTitle>
+          {isGithubSource && (
+            <div className="pb-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleOpenGithubGuide}
+                className="gap-1.5"
+              >
+                <FileCode2 className="size-4" />
+                {t('setting.githubWorkflowGuideButton')}
+              </Button>
+            </div>
+          )}
         </CardHeader>
         <Separator className="border-border-button bg-border-button w-[calc(100%+2rem)] -translate-x-4 -translate-y-4" />
         <CardContent className="p-2 flex flex-col gap-10 max-h-[calc(100vh-230px)] overflow-y-auto scrollbar-auto">
@@ -257,6 +283,17 @@ const SourceDetailPage = () => {
             />
           </div>
           <div className="max-w-[1200px] flex justify-end gap-2">
+            {isGithubSource && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleOpenGithubGuide}
+                className="gap-1.5"
+              >
+                <FileCode2 className="size-4" />
+                {t('setting.githubWorkflowGuideButton')}
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"
@@ -286,6 +323,27 @@ const SourceDetailPage = () => {
           </section>
         </CardContent>
       </Card>
+      {isGithubSource && (
+        <GithubWorkflowGuideModal
+          open={guideOpen}
+          onOpenChange={setGuideOpen}
+          repositoryOwner={
+            guideFormSnapshot?.config?.repository_owner ||
+            (detail?.config as any)?.repository_owner
+          }
+          repositoryName={
+            guideFormSnapshot?.config?.repository_name ||
+            (detail?.config as any)?.repository_name
+          }
+          branch={
+            guideFormSnapshot?.config?.branch || (detail?.config as any)?.branch
+          }
+          folderPath={
+            guideFormSnapshot?.config?.folder_path ||
+            (detail?.config as any)?.folder_path
+          }
+        />
+      )}
     </div>
   );
 };

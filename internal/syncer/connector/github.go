@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,21 +33,45 @@ import (
 )
 
 const (
-	defaultGitHubBatchSize = 32
-	githubItemsPerPage     = 100
-	githubRequestTimeout   = 60 * time.Second
+	defaultGitHubBatchSize    = 32
+	githubItemsPerPage        = 100
+	githubRequestTimeout      = 60 * time.Second
+	maxGitHubFileBytes        = 20 * 1024 * 1024
+	githubSyncScopeRepository = "repository"
+	githubSyncScopeDirectory  = "directory"
 )
 
-// GitHubConnector reads GitHub issues and pull requests.
+var githubExcludePatterns = []string{
+	".git",
+	".github",
+	"node_modules",
+	"vendor",
+	"dist",
+	"build",
+	"__pycache__",
+	".next",
+	".venv",
+	"venv",
+	"target",
+}
+
+// GitHubConnector reads GitHub repository files, issues, and pull requests.
 type GitHubConnector struct {
-	owner         string
-	repos         []string
-	includePRs    bool
-	includeIssues bool
-	token         string
-	batchSize     int
-	baseURL       string
-	doJSON        func(ctx context.Context, apiURL string, out any) (http.Header, error)
+	owner            string
+	repos            []string
+	includePRs       bool
+	includeIssues    bool
+	includeCodeFiles bool
+	branch           string
+	syncScope        string
+	folderPath       string
+	rawFolderPath    string
+	token            string
+	batchSize        int
+	baseURL          string
+	webBaseURL       string
+	doJSON           func(ctx context.Context, apiURL string, out any) (http.Header, error)
+	doRaw            func(ctx context.Context, apiURL string) ([]byte, error)
 }
 
 // NewGitHubConnector creates a GitHub connector from Python-compatible config.
@@ -57,15 +82,130 @@ func NewGitHubConnector(config map[string]any) (*GitHubConnector, error) {
 	if baseURL == "" {
 		baseURL = "https://api.github.com"
 	}
+	webBaseURL := strings.TrimRight(os.Getenv("GITHUB_WEB_BASE_URL"), "/")
+	if webBaseURL == "" {
+		webBaseURL = "https://github.com"
+	}
+	rawFolderPath := stringConfig(config["folder_path"])
+	folderPath, _ := normalizeGitHubFolderPath(rawFolderPath)
+	syncScope := strings.ToLower(strings.TrimSpace(stringConfig(config["sync_scope"])))
+	if syncScope == "" {
+		if folderPath != "" {
+			syncScope = githubSyncScopeDirectory
+		} else {
+			syncScope = githubSyncScopeRepository
+		}
+	}
 	return &GitHubConnector{
-		owner:         strings.TrimSpace(stringConfig(config["repository_owner"])),
-		repos:         splitGitHubRepos(stringConfig(config["repository_name"])),
-		includePRs:    configBoolDefault(config["include_pull_requests"], true),
-		includeIssues: configBoolDefault(config["include_issues"], true),
-		token:         strings.TrimSpace(token),
-		batchSize:     configInt(config["batch_size"], defaultGitHubBatchSize),
-		baseURL:       baseURL,
+		owner:            strings.TrimSpace(stringConfig(config["repository_owner"])),
+		repos:            splitGitHubRepos(stringConfig(config["repository_name"])),
+		includePRs:       configBoolDefault(config["include_pull_requests"], true),
+		includeIssues:    configBoolDefault(config["include_issues"], true),
+		includeCodeFiles: configBoolDefault(config["include_code_files"], false),
+		branch:           strings.TrimSpace(stringConfig(config["branch"])),
+		syncScope:        syncScope,
+		folderPath:       folderPath,
+		rawFolderPath:    rawFolderPath,
+		token:            strings.TrimSpace(token),
+		batchSize:        configInt(config["batch_size"], defaultGitHubBatchSize),
+		baseURL:          baseURL,
+		webBaseURL:       webBaseURL,
 	}, nil
+}
+
+// withRequestOverrides returns a shallow copy of GitHubConnector with unsaved request overrides applied.
+func (c *GitHubConnector) withRequestOverrides(request map[string]any) *GitHubConnector {
+	if len(request) == 0 {
+		return c
+	}
+	clone := *c
+	cfg := request
+	if nested, ok := request["config"].(map[string]any); ok {
+		cfg = nested
+	}
+	if v, ok := cfg["repository_owner"]; ok {
+		clone.owner = strings.TrimSpace(stringConfig(v))
+	}
+	if v, ok := cfg["repository_name"]; ok {
+		clone.repos = splitGitHubRepos(stringConfig(v))
+	}
+	if v, ok := cfg["include_pull_requests"]; ok {
+		clone.includePRs = configBoolDefault(v, clone.includePRs)
+	}
+	if v, ok := cfg["include_issues"]; ok {
+		clone.includeIssues = configBoolDefault(v, clone.includeIssues)
+	}
+	if v, ok := cfg["include_code_files"]; ok {
+		clone.includeCodeFiles = configBoolDefault(v, clone.includeCodeFiles)
+	}
+	if v, ok := cfg["branch"]; ok {
+		clone.branch = strings.TrimSpace(stringConfig(v))
+	}
+	if v, ok := cfg["folder_path"]; ok {
+		clone.rawFolderPath = stringConfig(v)
+		clone.folderPath, _ = normalizeGitHubFolderPath(clone.rawFolderPath)
+	}
+	if v, ok := cfg["sync_scope"]; ok {
+		scope := strings.ToLower(strings.TrimSpace(stringConfig(v)))
+		if scope != "" {
+			clone.syncScope = scope
+		}
+	}
+	if creds, ok := request["credentials"].(map[string]any); ok {
+		if tok, hasTok := creds["github_access_token"].(string); hasTok && strings.TrimSpace(tok) != "" {
+			clone.token = strings.TrimSpace(tok)
+		}
+	}
+	return &clone
+}
+
+// normalizeGitHubFolderPath normalizes a repository-relative folder path and rejects path traversal.
+func normalizeGitHubFolderPath(raw string) (string, error) {
+	cleaned := strings.TrimSpace(strings.ReplaceAll(raw, "\\", "/"))
+	cleaned = strings.Trim(cleaned, "/")
+	if cleaned == "" {
+		return "", nil
+	}
+	parts := strings.Split(cleaned, "/")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if part == "." || part == ".." {
+			return "", fmt.Errorf("Invalid connector settings: 'folder_path' must not contain '.' or '..'")
+		}
+		out = append(out, part)
+	}
+	return strings.Join(out, "/"), nil
+}
+
+// effectiveFolderPath returns the active folder filter when syncing a specific directory.
+func (c *GitHubConnector) effectiveFolderPath() string {
+	if c.syncScope == githubSyncScopeDirectory {
+		return c.folderPath
+	}
+	return ""
+}
+
+// effectiveBranch resolves the target branch for a repository.
+func (c *GitHubConnector) effectiveBranch(repo githubRepo) string {
+	if strings.TrimSpace(c.branch) != "" {
+		return strings.TrimSpace(c.branch)
+	}
+	if strings.TrimSpace(repo.DefaultBranch) != "" {
+		return strings.TrimSpace(repo.DefaultBranch)
+	}
+	return "main"
+}
+
+// initialStage returns the first sync/prune stage based on enabled connector options.
+func (c *GitHubConnector) initialStage() string {
+	if c.includeCodeFiles {
+		return githubStageCodeFiles
+	}
+	return githubStagePRs
 }
 
 // Validate validates GitHub connector settings and credentials.
@@ -81,6 +221,20 @@ func (c *GitHubConnector) Validate(ctx context.Context) error {
 	}
 	if c.batchSize <= 0 {
 		return fmt.Errorf("batch_size must be a positive integer")
+	}
+	if !c.includePRs && !c.includeIssues && !c.includeCodeFiles {
+		return fmt.Errorf("Invalid connector settings: at least one of 'include_pull_requests', 'include_issues', or 'include_code_files' must be enabled")
+	}
+	if c.includeCodeFiles {
+		if _, err := normalizeGitHubFolderPath(c.rawFolderPath); err != nil {
+			return err
+		}
+		if c.syncScope != githubSyncScopeRepository && c.syncScope != githubSyncScopeDirectory {
+			return fmt.Errorf("Invalid connector settings: 'sync_scope' must be 'repository' or 'directory'")
+		}
+		if c.syncScope == githubSyncScopeDirectory && c.folderPath == "" {
+			return fmt.Errorf("Invalid connector settings: 'folder_path' must be provided when 'sync_scope' is 'directory'")
+		}
 	}
 	repos, err := c.listRepos(ctx)
 	if err != nil {
@@ -99,6 +253,7 @@ func (c *GitHubConnector) ValidateConnectorSetting(ctx context.Context, request 
 	if c == nil {
 		return &ConnectorValidationError{Message: "github connector is nil"}
 	}
+	c = c.withRequestOverrides(request)
 	if c.token == "" {
 		return &ConnectorMissingCredentialError{Message: "Missing github_access_token in credentials"}
 	}
@@ -108,8 +263,72 @@ func (c *GitHubConnector) ValidateConnectorSetting(ctx context.Context, request 
 	if c.batchSize <= 0 {
 		return &ConnectorValidationError{Message: "batch_size must be a positive integer"}
 	}
+	if !c.includePRs && !c.includeIssues && !c.includeCodeFiles {
+		return &ConnectorValidationError{Message: "Invalid connector settings: at least one of 'include_pull_requests', 'include_issues', or 'include_code_files' must be enabled."}
+	}
+	if c.includeCodeFiles {
+		if _, err := normalizeGitHubFolderPath(c.rawFolderPath); err != nil {
+			return &ConnectorValidationError{Message: err.Error()}
+		}
+		if c.syncScope != githubSyncScopeRepository && c.syncScope != githubSyncScopeDirectory {
+			return &ConnectorValidationError{Message: "Invalid connector settings: 'sync_scope' must be 'repository' or 'directory'."}
+		}
+		if c.syncScope == githubSyncScopeDirectory && c.folderPath == "" {
+			return &ConnectorValidationError{Message: "Invalid connector settings: 'folder_path' must be provided when 'sync_scope' is 'directory'."}
+		}
+	}
 
-	return c.validateOwner(ctx)
+	if err := c.validateOwner(ctx); err != nil {
+		return err
+	}
+	if c.includeCodeFiles && len(c.repos) > 0 {
+		if err := c.validateCodeFilesTargets(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateCodeFilesTargets verifies that configured repositories, branches, and optional folder paths exist on GitHub.
+func (c *GitHubConnector) validateCodeFilesTargets(ctx context.Context) error {
+	folderPrefix := c.effectiveFolderPath()
+	for _, repoName := range c.repos {
+		var repo githubRepo
+		repoPath := "/repos/" + url.PathEscape(c.owner) + "/" + url.PathEscape(repoName)
+		if _, err := c.getJSON(ctx, c.apiURL(repoPath, nil), &repo); err != nil {
+			var apiErr *githubAPIError
+			if errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound {
+				return &ConnectorValidationError{Message: fmt.Sprintf("GitHub repository not found: %s/%s", c.owner, repoName)}
+			}
+			return classifyGitHubError(err)
+		}
+		fullName := repo.FullName
+		if fullName == "" {
+			fullName = c.owner + "/" + repoName
+		}
+		branch := c.effectiveBranch(repo)
+		treeResp, err := c.fetchRepoTree(ctx, fullName, branch)
+		if err != nil {
+			var apiErr *githubAPIError
+			if errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound {
+				return &ConnectorValidationError{Message: fmt.Sprintf("Branch '%s' not found in repository %s", branch, fullName)}
+			}
+			return classifyGitHubError(err)
+		}
+		if folderPrefix != "" {
+			foundFolder := false
+			for _, entry := range treeResp.Tree {
+				if entry.Path == folderPrefix || strings.HasPrefix(entry.Path, folderPrefix+"/") {
+					foundFolder = true
+					break
+				}
+			}
+			if !foundFolder {
+				return &ConnectorValidationError{Message: fmt.Sprintf("Folder path '%s' not found in %s (branch '%s')", folderPrefix, fullName, branch)}
+			}
+		}
+	}
+	return nil
 }
 
 // validateOwner validates the owner as an organization or a user with repositories.
@@ -213,7 +432,15 @@ func (c *GitHubConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 	if err != nil {
 		return nil, err
 	}
-	session := &githubSyncSession{connector: c, repos: repos, batchSize: c.batchSize, stage: githubStagePRs, page: 1, windowStart: request.WindowStart, windowEnd: request.WindowEnd}
+	session := &githubSyncSession{
+		connector:   c,
+		repos:       repos,
+		batchSize:   c.batchSize,
+		stage:       c.initialStage(),
+		page:        1,
+		windowStart: request.WindowStart,
+		windowEnd:   request.WindowEnd,
+	}
 	if err := session.applyResume(request.Resume); err != nil {
 		return nil, err
 	}
@@ -226,7 +453,13 @@ func (c *GitHubConnector) OpenPrune(ctx context.Context, request PruneRequest) (
 	if err != nil {
 		return nil, err
 	}
-	return &githubPruneSession{connector: c, repos: repos, batchSize: c.batchSize, stage: githubStagePRs, page: 1}, nil
+	return &githubPruneSession{
+		connector: c,
+		repos:     repos,
+		batchSize: c.batchSize,
+		stage:     c.initialStage(),
+		page:      1,
+	}, nil
 }
 
 // listRepos returns configured repositories or all owner repositories.
@@ -266,6 +499,214 @@ func (c *GitHubConnector) listRepoEndpoint(ctx context.Context, path string) ([]
 		}
 	}
 	return repos, nil
+}
+
+// fetchRepoTree calls GitHub Git Trees API with recursive=1 for a repository branch/ref.
+func (c *GitHubConnector) fetchRepoTree(ctx context.Context, fullName, branch string) (githubTreeResponse, error) {
+	query := url.Values{"recursive": {"1"}}
+	var treeResp githubTreeResponse
+	if _, err := c.getJSON(ctx, c.apiURL("/repos/"+fullName+"/git/trees/"+url.PathEscape(branch), query), &treeResp); err != nil {
+		return githubTreeResponse{}, err
+	}
+	return treeResp, nil
+}
+
+// listCodeFiles returns sorted, filtered repository file blobs for the target repository.
+func (c *GitHubConnector) listCodeFiles(ctx context.Context, repo githubRepo) ([]githubTreeEntry, string, error) {
+	branch := c.effectiveBranch(repo)
+	treeResp, err := c.fetchRepoTree(ctx, repo.FullName, branch)
+	if err != nil {
+		return nil, "", err
+	}
+	if treeResp.Truncated {
+		return nil, "", fmt.Errorf("github repository tree for %s@%s is truncated (>100k entries); aborting to prevent incomplete sync or prune", repo.FullName, branch)
+	}
+	folderPrefix := c.effectiveFolderPath()
+	files := make([]githubTreeEntry, 0, len(treeResp.Tree))
+	for _, entry := range treeResp.Tree {
+		if entry.Type != "blob" || entry.Mode == "160000" {
+			continue
+		}
+		if folderPrefix != "" && !strings.HasPrefix(entry.Path, folderPrefix+"/") {
+			continue
+		}
+		if shouldExcludeGitHubPath(entry.Path) {
+			continue
+		}
+		if entry.Size < 0 || entry.Size > maxGitHubFileBytes {
+			continue
+		}
+		if !isSupportedGitHubCodeFile(entry.Path) {
+			continue
+		}
+		files = append(files, entry)
+	}
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].Path < files[j].Path
+	})
+	return files, branch, nil
+}
+
+// listCodeFilePage returns one deterministic page of GitHub code/docs files for sync.
+func (c *GitHubConnector) listCodeFilePage(files []githubTreeEntry, fullName, branch string, page, pageSize int, windowEnd time.Time) ([]githubBufferedDocument, bool) {
+	if pageSize <= 0 {
+		pageSize = defaultGitHubBatchSize
+	}
+	if page <= 0 {
+		page = 1
+	}
+	start := (page - 1) * pageSize
+	if start >= len(files) {
+		return nil, true
+	}
+	end := start + pageSize
+	done := false
+	if end >= len(files) {
+		end = len(files)
+		done = true
+	}
+	updatedAt := windowEnd.UTC()
+	if updatedAt.IsZero() {
+		updatedAt = time.Now().UTC()
+	}
+	slice := files[start:end]
+	documents := make([]githubBufferedDocument, 0, len(slice))
+	for idx, entry := range slice {
+		doc := c.buildCodeFileDocument(fullName, branch, entry, updatedAt)
+		pageOffset := idx + 1
+		documents = append(documents, githubBufferedDocument{
+			document:   doc,
+			checkpoint: githubSyncCheckpoint(fullName, githubStageCodeFiles, page, pageOffset, doc),
+			offset:     pageOffset,
+			sourceID:   doc.SourceID,
+		})
+	}
+	return documents, done
+}
+
+// listCodeFileSlimPage returns one deterministic page of GitHub code/docs file SourceIDs for prune.
+func (c *GitHubConnector) listCodeFileSlimPage(files []githubTreeEntry, fullName, branch string, page, pageSize int) ([]SlimDocument, bool) {
+	if pageSize <= 0 {
+		pageSize = defaultGitHubBatchSize
+	}
+	if page <= 0 {
+		page = 1
+	}
+	start := (page - 1) * pageSize
+	if start >= len(files) {
+		return nil, true
+	}
+	end := start + pageSize
+	done := false
+	if end >= len(files) {
+		end = len(files)
+		done = true
+	}
+	slice := files[start:end]
+	documents := make([]SlimDocument, 0, len(slice))
+	for _, entry := range slice {
+		documents = append(documents, SlimDocument{SourceID: c.fileWebURL(fullName, branch, entry.Path)})
+	}
+	return documents, done
+}
+
+// buildCodeFileDocument constructs a delayed-fetch SourceDocument for a GitHub repository file.
+func (c *GitHubConnector) buildCodeFileDocument(fullName, branch string, entry githubTreeEntry, updatedAt time.Time) SourceDocument {
+	webURL := c.fileWebURL(fullName, branch, entry.Path)
+	fetchRef := githubFetchReference{
+		FullName: fullName,
+		Branch:   branch,
+		Path:     entry.Path,
+		SHA:      entry.SHA,
+	}
+	fetchKey, _ := json.Marshal(fetchRef)
+	semanticName := c.codeFileSemanticName(entry.Path)
+	ext := githubFileExt(entry.Path)
+	return SourceDocument{
+		SourceID:           webURL,
+		SemanticIdentifier: semanticName,
+		Extension:          ext,
+		FetchRef:           &FetchReference{Key: string(fetchKey), SizeHint: entry.Size},
+		UpdatedAt:          updatedAt,
+		SizeBytes:          entry.Size,
+		Metadata: map[string]any{
+			"object_type": "CodeFile",
+			"type":        "CodeFile",
+			"repo":        fullName,
+			"branch":      branch,
+			"path":        entry.Path,
+			"sha":         entry.SHA,
+			"web_url":     webURL,
+		},
+		Fingerprint: stableFingerprint(map[string]any{
+			"type":   "CodeFile",
+			"repo":   fullName,
+			"branch": branch,
+			"path":   entry.Path,
+			"sha":    entry.SHA,
+		}),
+	}
+}
+
+// codeFileSemanticName computes the display name relative to folder_path (DEC-01: OPT-1).
+func (c *GitHubConnector) codeFileSemanticName(filePath string) string {
+	rel := filePath
+	if prefix := c.effectiveFolderPath(); prefix != "" && strings.HasPrefix(filePath, prefix+"/") {
+		rel = strings.TrimPrefix(filePath, prefix+"/")
+	}
+	rel = strings.Trim(rel, "/")
+	if rel == "" {
+		rel = filepath.Base(filePath)
+	}
+	return strings.ReplaceAll(rel, "/", "_")
+}
+
+// fileWebURL builds the canonical GitHub web URL for a repository file.
+func (c *GitHubConnector) fileWebURL(fullName, branch, filePath string) string {
+	base := strings.TrimRight(c.webBaseURL, "/")
+	if base == "" {
+		base = "https://github.com"
+	}
+	return fmt.Sprintf("%s/%s/blob/%s/%s", base, strings.Trim(fullName, "/"), branch, strings.TrimLeft(filePath, "/"))
+}
+
+// fetchBlobRaw downloads raw file bytes from GitHub Git Blobs API with a 20MB safety cap.
+func (c *GitHubConnector) fetchBlobRaw(ctx context.Context, fullName, sha string) ([]byte, error) {
+	apiURL := c.apiURL("/repos/"+fullName+"/git/blobs/"+url.PathEscape(sha), nil)
+	if c.doRaw != nil {
+		return c.doRaw(ctx, apiURL)
+	}
+	resp, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:   http.MethodGet,
+		RawURL:   apiURL,
+		Validate: assertConnectorURLSafeHTTPS,
+		Headers: map[string]string{
+			"Accept":               "application/vnd.github.raw+json",
+			"X-GitHub-Api-Version": "2022-11-28",
+			"Authorization":        "Bearer " + c.token,
+		},
+		Timeout: githubRequestTimeout,
+	})
+	if err != nil {
+		var unsafe *connectorUnsafeURLError
+		if errors.As(err, &unsafe) {
+			return nil, unsafe.Err
+		}
+		return nil, fmt.Errorf("failed to fetch GitHub blob: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, &githubAPIError{Status: resp.StatusCode, Message: strings.TrimSpace(string(body))}
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxGitHubFileBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxGitHubFileBytes {
+		return nil, fmt.Errorf("github blob %s in %s exceeds maximum allowed size (%d bytes)", sha, fullName, maxGitHubFileBytes)
+	}
+	return data, nil
 }
 
 // listPullRequestPage returns one page of GitHub pull requests.
@@ -432,6 +873,9 @@ type githubSyncSession struct {
 	windowStart    *time.Time
 	windowEnd      time.Time
 	buffer         []githubBufferedDocument
+	codeFiles      []githubTreeEntry
+	codeFilesBranch string
+	codeFilesLoaded bool
 	resumeRepo     string
 	resumeStage    string
 	resumePage     int
@@ -483,19 +927,31 @@ func (s *githubSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	return SyncBatch{Documents: documents, Checkpoint: checkpoint}, nil
 }
 
+// Fetch downloads a GitHub file body for a delayed source document.
+func (s *githubSyncSession) Fetch(ctx context.Context, ref FetchReference) ([]byte, error) {
+	var fetch githubFetchReference
+	if err := json.Unmarshal([]byte(ref.Key), &fetch); err != nil {
+		return nil, err
+	}
+	return s.connector.fetchBlobRaw(ctx, fetch.FullName, fetch.SHA)
+}
+
 // Close closes the GitHub sync session.
 func (s *githubSyncSession) Close() error {
 	return nil
 }
 
 type githubPruneSession struct {
-	connector *GitHubConnector
-	repos     []githubRepo
-	repoIndex int
-	stage     string
-	page      int
-	batchSize int
-	buffer    []SlimDocument
+	connector       *GitHubConnector
+	repos           []githubRepo
+	repoIndex       int
+	stage           string
+	page            int
+	batchSize       int
+	buffer          []SlimDocument
+	codeFiles       []githubTreeEntry
+	codeFilesBranch string
+	codeFilesLoaded bool
 }
 
 // NextBatch returns the next GitHub prune snapshot batch.
@@ -537,14 +993,41 @@ func (s *githubPruneSession) Close() error {
 }
 
 const (
-	githubStagePRs    = "prs"
-	githubStageIssues = "issues"
+	githubStageCodeFiles = "code_files"
+	githubStagePRs       = "prs"
+	githubStageIssues    = "issues"
 )
 
 // nextDocumentPage fetches one GitHub API page for sync.
 func (s *githubSyncSession) nextDocumentPage(ctx context.Context) ([]githubBufferedDocument, error) {
 	repo := s.repos[s.repoIndex]
 	switch s.stage {
+	case githubStageCodeFiles:
+		if !s.connector.includeCodeFiles {
+			s.advanceStage()
+			return nil, nil
+		}
+		if !s.codeFilesLoaded {
+			files, branch, err := s.connector.listCodeFiles(ctx, repo)
+			if err != nil {
+				return nil, err
+			}
+			s.codeFiles = files
+			s.codeFilesBranch = branch
+			s.codeFilesLoaded = true
+		}
+		docs, done := s.connector.listCodeFilePage(s.codeFiles, repo.FullName, s.codeFilesBranch, s.page, s.batchSize, s.windowEnd)
+		var err error
+		docs, err = s.filterResumedDocuments(repo.FullName, githubStageCodeFiles, s.page, docs)
+		if err != nil {
+			return nil, err
+		}
+		if done {
+			s.advanceStage()
+		} else {
+			s.page++
+		}
+		return docs, nil
 	case githubStagePRs:
 		if !s.connector.includePRs {
 			s.advanceStage()
@@ -593,6 +1076,27 @@ func (s *githubSyncSession) nextDocumentPage(ctx context.Context) ([]githubBuffe
 func (s *githubPruneSession) nextSlimPage(ctx context.Context) ([]SlimDocument, error) {
 	repo := s.repos[s.repoIndex]
 	switch s.stage {
+	case githubStageCodeFiles:
+		if !s.connector.includeCodeFiles {
+			s.advanceStage()
+			return nil, nil
+		}
+		if !s.codeFilesLoaded {
+			files, branch, err := s.connector.listCodeFiles(ctx, repo)
+			if err != nil {
+				return nil, err
+			}
+			s.codeFiles = files
+			s.codeFilesBranch = branch
+			s.codeFilesLoaded = true
+		}
+		docs, done := s.connector.listCodeFileSlimPage(s.codeFiles, repo.FullName, s.codeFilesBranch, s.page, s.batchSize)
+		if done {
+			s.advanceStage()
+		} else {
+			s.page++
+		}
+		return docs, nil
 	case githubStagePRs:
 		if !s.connector.includePRs {
 			s.advanceStage()
@@ -629,18 +1133,32 @@ func (s *githubPruneSession) nextSlimPage(ctx context.Context) ([]SlimDocument, 
 	}
 }
 
-// advanceStage moves a GitHub session from PRs to issues.
+// advanceStage moves a GitHub session to the next stage within the same repository.
 func (s *githubSyncSession) advanceStage() {
-	s.stage = githubStageIssues
+	switch s.stage {
+	case githubStageCodeFiles:
+		s.stage = githubStagePRs
+	case githubStagePRs:
+		s.stage = githubStageIssues
+	default:
+		s.advanceRepo()
+		return
+	}
 	s.page = 1
+	s.codeFiles = nil
+	s.codeFilesBranch = ""
+	s.codeFilesLoaded = false
 	s.clearResume()
 }
 
 // advanceRepo moves a GitHub session to the next repository.
 func (s *githubSyncSession) advanceRepo() {
 	s.repoIndex++
-	s.stage = githubStagePRs
+	s.stage = s.connector.initialStage()
 	s.page = 1
+	s.codeFiles = nil
+	s.codeFilesBranch = ""
+	s.codeFilesLoaded = false
 	s.clearResume()
 }
 
@@ -705,21 +1223,97 @@ func (s *githubSyncSession) clearResume() {
 	s.resumeSourceID = ""
 }
 
-// advanceStage moves a GitHub prune session from PRs to issues.
+// advanceStage moves a GitHub prune session to the next stage within the same repository.
 func (s *githubPruneSession) advanceStage() {
-	s.stage = githubStageIssues
+	switch s.stage {
+	case githubStageCodeFiles:
+		s.stage = githubStagePRs
+	case githubStagePRs:
+		s.stage = githubStageIssues
+	default:
+		s.advanceRepo()
+		return
+	}
 	s.page = 1
+	s.codeFiles = nil
+	s.codeFilesBranch = ""
+	s.codeFilesLoaded = false
 }
 
 // advanceRepo moves a GitHub prune session to the next repository.
 func (s *githubPruneSession) advanceRepo() {
 	s.repoIndex++
-	s.stage = githubStagePRs
+	s.stage = s.connector.initialStage()
 	s.page = 1
+	s.codeFiles = nil
+	s.codeFilesBranch = ""
+	s.codeFilesLoaded = false
 }
 
 type githubRepo struct {
+	FullName      string `json:"full_name"`
+	DefaultBranch string `json:"default_branch"`
+}
+
+type githubTreeResponse struct {
+	SHA       string            `json:"sha"`
+	Tree      []githubTreeEntry `json:"tree"`
+	Truncated bool              `json:"truncated"`
+}
+
+type githubTreeEntry struct {
+	Path string `json:"path"`
+	Mode string `json:"mode"`
+	Type string `json:"type"`
+	SHA  string `json:"sha"`
+	Size int64  `json:"size"`
+}
+
+type githubFetchReference struct {
 	FullName string `json:"full_name"`
+	Branch   string `json:"branch"`
+	Path     string `json:"path"`
+	SHA      string `json:"sha"`
+}
+
+// shouldExcludeGitHubPath reports whether a repository path is inside a noisy build/dependency folder.
+func shouldExcludeGitHubPath(filePath string) bool {
+	parts := strings.Split(strings.Trim(filePath, "/"), "/")
+	for _, part := range parts {
+		for _, excluded := range githubExcludePatterns {
+			if strings.EqualFold(part, excluded) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// githubFileExt returns the lowercased extension (with leading dot) for a file path.
+func githubFileExt(filePath string) string {
+	ext := strings.ToLower(strings.TrimSpace(filepath.Ext(filePath)))
+	return ext
+}
+
+var githubSupportedExtensions = map[string]struct{}{
+	".pdf": {}, ".doc": {}, ".docx": {}, ".ppt": {}, ".pptx": {}, ".xls": {}, ".xlsx": {},
+	".md": {}, ".markdown": {}, ".mdx": {}, ".txt": {}, ".rst": {}, ".rtf": {},
+	".csv": {}, ".json": {}, ".jsonl": {}, ".ldjson": {}, ".yml": {}, ".yaml": {}, ".xml": {}, ".ini": {}, ".toml": {},
+	".htm": {}, ".html": {}, ".sql": {}, ".epub": {}, ".msg": {}, ".eml": {},
+	".wps": {}, ".wpt": {}, ".et": {}, ".ett": {}, ".dps": {}, ".dpt": {}, ".hlp": {}, ".pages": {}, ".numbers": {}, ".key": {},
+	".py": {}, ".js": {}, ".jsx": {}, ".ts": {}, ".tsx": {}, ".java": {}, ".c": {}, ".cpp": {}, ".h": {}, ".hpp": {},
+	".php": {}, ".go": {}, ".sh": {}, ".cs": {}, ".kt": {}, ".rs": {}, ".rb": {}, ".swift": {}, ".scala": {},
+	".jpg": {}, ".jpeg": {}, ".png": {}, ".tif": {}, ".gif": {}, ".bmp": {}, ".svg": {}, ".webp": {},
+}
+
+// isSupportedGitHubCodeFile reports whether a repository file should be ingested by RAGFlow.
+func isSupportedGitHubCodeFile(filePath string) bool {
+	ext := githubFileExt(filePath)
+	if ext == "" {
+		return false
+	}
+	_, ok := githubSupportedExtensions[ext]
+	return ok
 }
 
 // githubAPIError is a GitHub API error with its HTTP status.

@@ -2,11 +2,13 @@
     "id": 33,
     "title": {
         "en": "General",
+        "vi": "Đa năng (General)",
         "de": "Allgemein",
         "zh": "通用"
     },
     "description": {
-        "en": "This general-purpose template segments parsed files by token count. Ideal for unstructured documents that lack a fixed layout.",
+        "en": "This general-purpose template segments parsed files by token count and natural delimiters. Ideal for unstructured documents that lack a fixed layout. Use cases: meeting notes, general business reports, internal memos, wiki articles, and mixed-format knowledge bases (.pdf, .docx, .txt, .md).",
+        "vi": "Quy trình phân đoạn đa năng theo số lượng token kết hợp dấu ngắt câu tự nhiên. Tình huống sử dụng: Lý tưởng cho các tài liệu văn bản tự do không có cấu trúc chương mục cố định như biên bản cuộc họp, báo cáo tổng hợp, công văn, bài viết wiki hoặc kho tri thức hỗn hợp nhiều định dạng (.pdf, .docx, .txt, .md).",
         "de": "Diese Vorlage verwendet eine allgemeine Segmentierungsstrategie und teilt die geparste Datei anhand der Token-Anzahl auf. Sie eignet sich für verschiedenste Dokumenttypen, wenn kein spezifisches Strukturmuster erforderlich ist.",
         "zh": "此模板采用通用切分逻辑，按照 token 数量对解析后的文件进行切片，适用于不依赖特定结构模式的各类文档。"
     },

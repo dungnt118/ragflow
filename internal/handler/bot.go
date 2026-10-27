@@ -18,12 +18,15 @@ package handler
 
 import (
 	"context"
+	"errors"
+	"io"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
 
@@ -87,6 +90,7 @@ func (h *BotHandler) ChatbotInfo(c *gin.Context) {
 		"has_tavily_key":          hasWebSearch,
 		"has_web_search_provider": hasWebSearch,
 		"llm_id":                  llmID,
+		"feedback_config":         h.resolveChatbotFeedbackConfig(c.Request.Context(), user.ID, dialogID),
 	}, "success")
 }
 
@@ -112,11 +116,12 @@ func (h *BotHandler) AgentbotInputs(c *gin.Context) {
 		return
 	}
 	common.SuccessWithData(c, gin.H{
-		"title":    title,
-		"avatar":   avatar,
-		"inputs":   inputs,
-		"prologue": prologue,
-		"mode":     mode,
+		"title":           title,
+		"avatar":          avatar,
+		"inputs":          inputs,
+		"prologue":        prologue,
+		"mode":            mode,
+		"feedback_config": h.resolveAgentbotFeedbackConfig(c.Request.Context(), user.ID, agentID),
 	}, "success")
 }
 
@@ -277,6 +282,126 @@ func (h *BotHandler) GetAgentbotLogs(c *gin.Context) {
 		}
 	}
 	data, ec, err := h.botService.AgentbotLogs(c.Request.Context(), user.ID, agentIDStr, messageID)
+	if err != nil {
+		common.ResponseWithCodeData(c, ec, nil, err.Error())
+		return
+	}
+	common.SuccessWithData(c, data, "success")
+}
+
+type botFeedbackService interface {
+	ChatbotFeedbackConfig(ctx context.Context, userID, dialogID string) *entity.FeedbackConfig
+	AgentbotFeedbackConfig(ctx context.Context, userID, agentID string) *entity.FeedbackConfig
+	ChatbotFeedback(ctx context.Context, userID, dialogID, sessionID, msgID string, req map[string]interface{}) (map[string]interface{}, common.ErrorCode, error)
+	AgentbotFeedback(ctx context.Context, userID, agentID, sessionID, msgID string, req map[string]interface{}) (map[string]interface{}, common.ErrorCode, error)
+}
+
+func (h *BotHandler) resolveChatbotFeedbackConfig(ctx context.Context, userID, dialogID string) *entity.FeedbackConfig {
+	if fbSvc, ok := h.botService.(botFeedbackService); ok {
+		return fbSvc.ChatbotFeedbackConfig(ctx, userID, dialogID)
+	}
+	return nil
+}
+
+func (h *BotHandler) resolveAgentbotFeedbackConfig(ctx context.Context, userID, agentID string) *entity.FeedbackConfig {
+	if fbSvc, ok := h.botService.(botFeedbackService); ok {
+		return fbSvc.AgentbotFeedbackConfig(ctx, userID, agentID)
+	}
+	return nil
+}
+
+func enforceBotScope(c *gin.Context, targetID string) bool {
+	if boundID, ok := c.Get("agent_id"); ok {
+		if boundIDStr, ok := boundID.(string); ok && boundIDStr != "" && boundIDStr != targetID {
+			common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, "API token is not authorized for this resource.")
+			return false
+		}
+	}
+	return true
+}
+
+// ChatbotFeedback PUT /api/v1/chatbots/:dialog_id/sessions/:session_id/messages/:msg_id/feedback
+func (h *BotHandler) ChatbotFeedback(c *gin.Context) {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
+		common.ResponseWithCodeData(c, code, nil, msg)
+		return
+	}
+	dialogID := c.Param("dialog_id")
+	sessionID := c.Param("session_id")
+	msgID := c.Param("msg_id")
+	if dialogID == "" || sessionID == "" || msgID == "" {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`dialog_id`, `session_id`, and `msg_id` are required.")
+		return
+	}
+	if !enforceBotScope(c, dialogID) {
+		return
+	}
+	fbSvc, ok := h.botService.(botFeedbackService)
+	if !ok {
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "bot feedback service is not available")
+		return
+	}
+	req := map[string]interface{}{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if errors.Is(err, io.EOF) {
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Request body cannot be empty")
+			return
+		}
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
+		return
+	}
+	if len(req) == 0 {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Request body cannot be empty")
+		return
+	}
+	data, ec, err := fbSvc.ChatbotFeedback(c.Request.Context(), user.ID, dialogID, sessionID, msgID, req)
+	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
+		common.ResponseWithCodeData(c, ec, nil, err.Error())
+		return
+	}
+	common.SuccessWithData(c, data, "success")
+}
+
+// AgentbotFeedback PUT /api/v1/agentbots/:agent_id/sessions/:session_id/messages/:msg_id/feedback
+func (h *BotHandler) AgentbotFeedback(c *gin.Context) {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
+		common.ResponseWithCodeData(c, code, nil, msg)
+		return
+	}
+	agentID := c.Param("agent_id")
+	sessionID := c.Param("session_id")
+	msgID := c.Param("msg_id")
+	if agentID == "" || sessionID == "" || msgID == "" {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`agent_id`, `session_id`, and `msg_id` are required.")
+		return
+	}
+	if !enforceBotScope(c, agentID) {
+		return
+	}
+	fbSvc, ok := h.botService.(botFeedbackService)
+	if !ok {
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "bot feedback service is not available")
+		return
+	}
+	req := map[string]interface{}{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if errors.Is(err, io.EOF) {
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Request body cannot be empty")
+			return
+		}
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
+		return
+	}
+	if len(req) == 0 {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Request body cannot be empty")
+		return
+	}
+	data, ec, err := fbSvc.AgentbotFeedback(c.Request.Context(), user.ID, agentID, sessionID, msgID, req)
 	if err != nil {
 		common.ResponseWithCodeData(c, ec, nil, err.Error())
 		return

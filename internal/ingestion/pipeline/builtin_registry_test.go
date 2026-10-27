@@ -266,3 +266,25 @@ func TestLoadBuiltinDSL_UnknownFails(t *testing.T) {
 		t.Fatal("LoadBuiltinDSL(nonexistent) = nil, want error")
 	}
 }
+
+func TestDefaultRegistryHasVietnameseLocalization(t *testing.T) {
+	r, err := DefaultRegistry()
+	if err != nil {
+		t.Fatalf("DefaultRegistry: %v", err)
+	}
+	list := r.List()
+	if list == nil || len(list.BuiltinPipelines) != 12 {
+		t.Fatalf("expected 12 builtin pipelines, got %v", list)
+	}
+	for _, item := range list.BuiltinPipelines {
+		if item.Title == "" {
+			t.Errorf("pipeline %s missing canonical English Title", item.ParserID)
+		}
+		if item.Titles["vi"] == "" {
+			t.Errorf("pipeline %s missing Vietnamese title in Titles[vi]", item.ParserID)
+		}
+		if item.Descriptions["vi"] == "" {
+			t.Errorf("pipeline %s missing Vietnamese description in Descriptions[vi]", item.ParserID)
+		}
+	}
+}

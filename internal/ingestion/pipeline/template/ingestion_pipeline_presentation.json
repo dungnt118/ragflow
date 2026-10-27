@@ -2,11 +2,13 @@
     "id": 43,
     "title": {
         "en": "Presentation",
+        "vi": "Bài thuyết trình (Presentation)",
         "de": "Präsentation",
         "zh": "演示文稿"
     },
     "description": {
-        "en": "This template segments parsed slide content. Best for presentation files such as PowerPoint slides, keynote files, and lecture materials organized slide by slide.",
+        "en": "This template segments parsed slide content page by page while keeping bullet points, speaker notes, and slide visuals grouped together. Use cases: PowerPoint (.pptx) and PDF decks, sales pitch decks, executive briefings, and training lecture slides.",
+        "vi": "Phân đoạn theo từng trang chiếu (Slide-by-Slide), giữ nguyên mối liên kết giữa tiêu đề slide, các ý gạch đầu dòng và biểu đồ minh họa trên cùng một trang. Tình huống sử dụng: Slide thuyết trình bán hàng (Pitch Deck), bài giảng đào tạo, báo cáo tổng kết quản trị (.pptx, .pdf).",
         "de": "Diese Vorlage segmentiert den Inhalt von Präsentationsfolien. Sie eignet sich für Präsentationsdateien wie PowerPoint-Folien, Keynote-Dateien und folienweise organisiertes Vorlesungsmaterial.",
         "zh": "此模板将解析后的幻灯片内容进行切片，适用于演示文稿文件，如PowerPoint幻灯片、Keynote文件以及按幻灯片组织的讲座材料。"
     },

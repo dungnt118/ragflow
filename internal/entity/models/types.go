@@ -569,6 +569,7 @@ func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, rerankC
 	if r == nil || r.ModelDriver == nil {
 		return nil, errors.New("rerank model: driver is nil")
 	}
+	modelUsage = prepareModelUsage(ctx, modelUsage, r.info, r.ModelName, "rerank")
 	maxTokens := r.MaxTokens
 	if maxTokens <= 0 {
 		maxTokens = defaultMaxRerankTokens
@@ -584,7 +585,11 @@ func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, rerankC
 	// nothing to cut. Neither needs the tokenizer counter, so the "declared
 	// tokenizer asset is missing" refusal does not apply to them.
 	if mode == "passthrough" || len(request.Documents) == 0 {
-		return r.ModelDriver.Rerank(ctx, r.ModelName, request, r.APIConfig, rerankConfig, modelUsage)
+		resp, err := r.ModelDriver.Rerank(ctx, r.ModelName, request, r.APIConfig, rerankConfig, modelUsage)
+		if err == nil {
+			finalizeRerankUsage(modelUsage, request)
+		}
+		return resp, err
 	}
 	// Both remaining modes count tokens, so an unavailable declared tokenizer is a
 	// refusal rather than a silent fallback to the calibrated estimate.
@@ -605,7 +610,11 @@ func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, rerankC
 				return nil, fmt.Errorf("%w: rerank input at document index %d has %d tokens, exceeding the configured maximum of %d", ErrRerankTokenLimitPolicy, i, inputTokens, effectiveMaxTokens)
 			}
 		}
-		return r.ModelDriver.Rerank(ctx, r.ModelName, request, r.APIConfig, rerankConfig, modelUsage)
+		resp, err := r.ModelDriver.Rerank(ctx, r.ModelName, request, r.APIConfig, rerankConfig, modelUsage)
+		if err == nil {
+			finalizeRerankUsage(modelUsage, request)
+		}
+		return resp, err
 	}
 
 	// mode == "truncate": pre-cut each document to the window, then shrink and
@@ -624,6 +633,7 @@ func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, rerankC
 		}
 		resp, err := r.ModelDriver.Rerank(ctx, r.ModelName, attempt, r.APIConfig, rerankConfig, modelUsage)
 		if err == nil {
+			finalizeRerankUsage(modelUsage, attempt)
 			return resp, nil
 		}
 		if !tokenizer.IsOverLimitError(err) {
@@ -671,7 +681,16 @@ func (m *OCRModel) OCRFile(ctx context.Context, content []byte, url *string, con
 	if m == nil || m.ModelDriver == nil {
 		return nil, errors.New("OCR model: driver is nil")
 	}
-	return m.ModelDriver.OCRFile(ctx, m.ModelName, content, url, m.APIConfig, config, usage)
+	usage = prepareModelUsage(ctx, usage, m.info, m.ModelName, "ocr")
+	resp, err := m.ModelDriver.OCRFile(ctx, m.ModelName, content, url, m.APIConfig, config, usage)
+	if err == nil && resp != nil {
+		outText := ""
+		if resp.Text != nil {
+			outText = *resp.Text
+		}
+		finalizeOtherUsage(usage, "", outText, 250)
+	}
+	return resp, err
 }
 
 // ASRModel wraps a ModelDriver with speech-to-text configuration.
@@ -704,12 +723,32 @@ func (m *ASRModel) Info() *ModelInfo {
 
 // Transcribe converts audio to text.
 func (m *ASRModel) Transcribe(ctx context.Context, audioFile *string, config *ASRConfig, usage *common.ModelUsage) (*ASRResponse, error) {
-	return m.ModelDriver.TranscribeAudio(ctx, m.ModelName, audioFile, m.APIConfig, config, usage)
+	usage = prepareModelUsage(ctx, usage, m.info, m.ModelName, "speech2text")
+	resp, err := m.ModelDriver.TranscribeAudio(ctx, m.ModelName, audioFile, m.APIConfig, config, usage)
+	if err == nil && resp != nil {
+		finalizeOtherUsage(usage, "", resp.Text, 100)
+	}
+	return resp, err
 }
 
 // TranscribeWithSender streams transcription results through sender.
 func (m *ASRModel) TranscribeWithSender(ctx context.Context, audioFile *string, config *ASRConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
-	return m.ModelDriver.TranscribeAudioWithSender(ctx, m.ModelName, audioFile, m.APIConfig, config, usage, sender)
+	usage = prepareModelUsage(ctx, usage, m.info, m.ModelName, "speech2text")
+	var streamed string
+	wrappedSender := sender
+	if sender != nil {
+		wrappedSender = func(delta, reason *string) error {
+			if delta != nil {
+				streamed += *delta
+			}
+			return sender(delta, reason)
+		}
+	}
+	err := m.ModelDriver.TranscribeAudioWithSender(ctx, m.ModelName, audioFile, m.APIConfig, config, usage, wrappedSender)
+	if err == nil {
+		finalizeOtherUsage(usage, "", streamed, 100)
+	}
+	return err
 }
 
 // TTSModel wraps a ModelDriver with text-to-speech configuration.
@@ -742,12 +781,30 @@ func (m *TTSModel) Info() *ModelInfo {
 
 // Speech converts text to audio.
 func (m *TTSModel) Speech(ctx context.Context, audioContent *string, config *TTSConfig, usage *common.ModelUsage) (*TTSResponse, error) {
-	return m.ModelDriver.AudioSpeech(ctx, m.ModelName, audioContent, m.APIConfig, config, usage)
+	usage = prepareModelUsage(ctx, usage, m.info, m.ModelName, "tts")
+	resp, err := m.ModelDriver.AudioSpeech(ctx, m.ModelName, audioContent, m.APIConfig, config, usage)
+	if err == nil {
+		inText := ""
+		if audioContent != nil {
+			inText = *audioContent
+		}
+		finalizeOtherUsage(usage, inText, "", 50)
+	}
+	return resp, err
 }
 
 // SpeechWithSender streams synthesized audio through sender.
 func (m *TTSModel) SpeechWithSender(ctx context.Context, audioContent *string, config *TTSConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
-	return m.ModelDriver.AudioSpeechWithSender(ctx, m.ModelName, audioContent, m.APIConfig, config, usage, sender)
+	usage = prepareModelUsage(ctx, usage, m.info, m.ModelName, "tts")
+	err := m.ModelDriver.AudioSpeechWithSender(ctx, m.ModelName, audioContent, m.APIConfig, config, usage, sender)
+	if err == nil {
+		inText := ""
+		if audioContent != nil {
+			inText = *audioContent
+		}
+		finalizeOtherUsage(usage, inText, "", 50)
+	}
+	return err
 }
 
 // ToolConfig bundles tool-calling configuration for a ChatModel.
@@ -810,7 +867,19 @@ func (m *ChatModel) ChatWithMessages(ctx context.Context, messages []Message, co
 	if m.ModelName != nil {
 		modelName = *m.ModelName
 	}
-	return m.ModelDriver.ChatWithMessages(ctx, modelName, messages, m.APIConfig, config, usage)
+	usage = prepareModelUsage(ctx, usage, m.info, m.ModelName, "chat")
+	resp, err := m.ModelDriver.ChatWithMessages(ctx, modelName, messages, m.APIConfig, config, usage)
+	if err == nil && resp != nil {
+		ans := ""
+		if resp.Answer != nil {
+			ans = *resp.Answer
+		}
+		if resp.ReasonContent != nil && *resp.ReasonContent != "" {
+			ans += " " + *resp.ReasonContent
+		}
+		finalizeChatUsage(usage, messages, ans, config.UsageResult, resp.Usage)
+	}
+	return resp, err
 }
 
 // ChatStreamlyWithSender streams chat deltas through sender.
@@ -826,7 +895,25 @@ func (m *ChatModel) ChatStreamlyWithSender(ctx context.Context, messages []Messa
 	if m.ModelName != nil {
 		modelName = *m.ModelName
 	}
-	return m.ModelDriver.ChatStreamlyWithSender(ctx, modelName, messages, m.APIConfig, config, usage, sender)
+	usage = prepareModelUsage(ctx, usage, m.info, m.ModelName, "chat")
+	var streamedBuilder strings.Builder
+	wrappedSender := sender
+	if sender != nil {
+		wrappedSender = func(delta, reason *string) error {
+			if reason != nil && *reason != "" {
+				streamedBuilder.WriteString(*reason)
+			}
+			if delta != nil && *delta != "" && *delta != "[DONE]" {
+				streamedBuilder.WriteString(*delta)
+			}
+			return sender(delta, reason)
+		}
+	}
+	err := m.ModelDriver.ChatStreamlyWithSender(ctx, modelName, messages, m.APIConfig, config, usage, wrappedSender)
+	if err == nil {
+		finalizeChatUsage(usage, messages, streamedBuilder.String(), config.UsageResult, nil)
+	}
+	return err
 }
 
 func (m *ChatModel) withDefaults(config *ChatConfig) *ChatConfig {
@@ -904,6 +991,8 @@ type ModelInfo struct {
 	ProviderName  string
 	InstanceID    string
 	InstanceName  string
+	TenantID      string
+	UserID        string
 	ModelTypes    []string
 	ContextLength int
 	MaxOutput     int

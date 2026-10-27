@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import {
   useFetchSessionList,
   useFetchSessionManually,
@@ -9,9 +10,10 @@ import { IClientConversation } from '@/interfaces/database/chat';
 import { RootLayoutContainer } from '@/layouts/root-layout';
 import { cn } from '@/lib/utils';
 import { isEmpty } from 'lodash';
-import { LucideArrowBigLeft, LucideArrowUpRight } from 'lucide-react';
+import { Logs, LucideArrowBigLeft, LucideArrowUpRight } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
 import { ChatSettings } from './app-settings/chat-settings';
 import { MultipleChatBox } from './chat-box/next-multiple-chat-box';
@@ -22,6 +24,8 @@ import { useSwitchDebugMode } from './use-switch-debug-mode';
 
 export default function Chat() {
   const { t } = useTranslation();
+  const { id: chatId } = useParams();
+  const { navigateToChatLogs } = useNavigatePage();
   const [currentConversation, setCurrentConversation] =
     useState<IClientConversation>({} as IClientConversation);
 
@@ -120,14 +124,27 @@ export default function Chat() {
                   <CardTitle className="flex justify-between items-center text-base gap-2">
                     <div className="truncate">{currentConversationName}</div>
 
-                    <Button
-                      variant="ghost"
-                      onClick={switchDebugMode}
-                      data-testid="chat-detail-multimodel-toggle"
-                    >
-                      <LucideArrowUpRight />
-                      {t('chat.multipleModels')}
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      {chatId && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={navigateToChatLogs(chatId)}
+                          data-testid="chat-header-feedback-logs-btn"
+                        >
+                          <Logs className="size-4 mr-1" />
+                          Nhật ký & Đánh giá
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        onClick={switchDebugMode}
+                        data-testid="chat-detail-multimodel-toggle"
+                      >
+                        <LucideArrowUpRight />
+                        {t('chat.multipleModels')}
+                      </Button>
+                    </div>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="flex-1 p-0 min-h-0">

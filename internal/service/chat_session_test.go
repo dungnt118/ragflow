@@ -124,6 +124,21 @@ func (f *fakeSessionStore) UpdateByID(ctx context.Context, db *gorm.DB, id strin
 							message["feedback"] = feedback
 						}
 					}
+					if history.ClearFeedbackDetail {
+						delete(message, "feedback_detail")
+					} else if history.FeedbackDetail != nil {
+						var prevDigest string
+						if prevRaw, ok := message["feedback_detail"].(map[string]interface{}); ok {
+							prevDigest, _ = prevRaw["last_trigger_digest"].(string)
+						}
+						if history.ShouldFireTrigger != nil {
+							*history.ShouldFireTrigger = history.FeedbackDetail.LastTriggerDigest != "" && history.FeedbackDetail.LastTriggerDigest != prevDigest
+						}
+						b, _ := json.Marshal(history.FeedbackDetail)
+						var detailMap map[string]interface{}
+						_ = json.Unmarshal(b, &detailMap)
+						message["feedback_detail"] = detailMap
+					}
 				}
 			}
 		} else if history.Message != nil {

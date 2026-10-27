@@ -9,6 +9,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
+	"ragflow/internal/channels/core"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -25,7 +26,19 @@ func setupChatChannelServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err = db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.UserTenant{}); err != nil {
+	if err = db.AutoMigrate(
+		&entity.ChatChannel{},
+		&entity.Chat{},
+		&entity.UserTenant{},
+		&entity.User{},
+		&entity.Tenant{},
+		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.API4ConversationMessage{},
+		&entity.API4ConversationReference{},
+	); err != nil {
 		t.Fatalf("failed to migrate test schema: %v", err)
 	}
 
@@ -100,6 +113,7 @@ func TestChatChannelServiceCreateAndList(t *testing.T) {
 		"dingtalk",
 		entity.JSONMap{"token": "abc"},
 		&chatID,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("CreateChatChannel failed: %v", err)
@@ -475,4 +489,396 @@ func TestGetOrCreateForChannelFallbackNames(t *testing.T) {
 			t.Fatalf("unexpected session name: %v", session.Name)
 		}
 	})
+}
+
+func TestTelegramGroupThreadSessionIsolationAndContextInjection(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	ctx := t.Context()
+
+	svc := NewChatChannelService()
+
+	// Thread 1 (Root Message #100 in group -100555)
+	msg1 := ChatChannelIncomingMessage{
+		Channel:        "telegram",
+		AccountID:      "cc-tg",
+		ChatID:         "-100555",
+		ChatType:       "group",
+		ChatTitle:      "BQL Cư Dân",
+		MessageID:      "100",
+		ThreadID:       "100",
+		SenderID:       "11",
+		SenderName:     "Nguyen Van A",
+		SenderUsername: "nguyenvana",
+		Text:           "Giá dịch vụ tháng này tính thế nào?",
+	}
+	sender1 := formatChannelSenderDisplay(msg1.SenderUsername, msg1.SenderName, msg1.SenderID, msg1.ChatID)
+	label1 := formatChannelSessionLabel("Riverside Bot", msg1.ChatType, msg1.ChatTitle, sender1)
+	sess1, err := svc.resolveOrCreateChannelSession(ctx, "dialog-1", "cc-tg", label1, sender1, msg1)
+	if err != nil {
+		t.Fatalf("resolveOrCreateChannelSession(msg1) error: %v", err)
+	}
+	if sess1.Name == nil || !strings.HasPrefix(*sess1.Name, "(channel: Riverside Bot | Nhóm: BQL Cư Dân | @nguyenvana (Nguyen Van A)) ") {
+		t.Fatalf("unexpected group thread session name: %v", sess1.Name)
+	}
+	if sess1.UserID == nil || *sess1.UserID != "@nguyenvana (Nguyen Van A)" {
+		t.Fatalf("expected session UserID to record sender display, got %v", sess1.UserID)
+	}
+
+	// Follow-up in Thread 1 (Message #105 replying to Bot #101 in same thread "100")
+	msg1FollowUp := ChatChannelIncomingMessage{
+		Channel:          "telegram",
+		AccountID:        "cc-tg",
+		ChatID:           "-100555",
+		ChatType:         "group",
+		ChatTitle:        "BQL Cư Dân",
+		MessageID:        "105",
+		ThreadID:         "100",
+		SenderID:         "22",
+		SenderName:       "Le Thi B",
+		SenderUsername:   "lethib",
+		ReplyToMessageID: "101",
+		ReplyToText:      "Phí dịch vụ là 12.000đ/m2.",
+		ReplyToIsBot:     true,
+		Text:             "Đã bao gồm phí gửi xe chưa?",
+	}
+	sender1FollowUp := formatChannelSenderDisplay(msg1FollowUp.SenderUsername, msg1FollowUp.SenderName, msg1FollowUp.SenderID, msg1FollowUp.ChatID)
+	label1FollowUp := formatChannelSessionLabel("Riverside Bot", msg1FollowUp.ChatType, msg1FollowUp.ChatTitle, sender1FollowUp)
+	sess1FollowUp, err := svc.resolveOrCreateChannelSession(ctx, "dialog-1", "cc-tg", label1FollowUp, sender1FollowUp, msg1FollowUp)
+	if err != nil {
+		t.Fatalf("resolveOrCreateChannelSession(msg1FollowUp) error: %v", err)
+	}
+	if sess1FollowUp.ID != sess1.ID {
+		t.Fatalf("expected reply in same thread to reuse session %s, got %s", sess1.ID, sess1FollowUp.ID)
+	}
+
+	// Thread 2 (Unrelated topic in the same group -100555, Message #200) -> MUST get a distinct Session!
+	msg2 := ChatChannelIncomingMessage{
+		Channel:          "telegram",
+		AccountID:        "cc-tg",
+		ChatID:           "-100555",
+		ChatType:         "group",
+		ChatTitle:        "BQL Cư Dân",
+		MessageID:        "201",
+		ThreadID:         "200",
+		SenderID:         "33",
+		SenderName:       "Tran Van C",
+		SenderUsername:   "tranvanc",
+		ReplyToMessageID: "200",
+		ReplyToSender:    "@userd (User D)",
+		ReplyToText:      "Khách ở căn A12 báo hỏng điều hòa trung tâm",
+		ReplyToIsBot:     false,
+		Text:             "quy trình bảo hành thiết bị này thế nào?",
+	}
+	sender2 := formatChannelSenderDisplay(msg2.SenderUsername, msg2.SenderName, msg2.SenderID, msg2.ChatID)
+	label2 := formatChannelSessionLabel("Riverside Bot", msg2.ChatType, msg2.ChatTitle, sender2)
+	sess2, err := svc.resolveOrCreateChannelSession(ctx, "dialog-1", "cc-tg", label2, sender2, msg2)
+	if err != nil {
+		t.Fatalf("resolveOrCreateChannelSession(msg2) error: %v", err)
+	}
+	if sess2.ID == sess1.ID {
+		t.Fatalf("expected distinct session for new thread in same group, both got %s", sess2.ID)
+	}
+
+	// Verify contextual query injection when replying to a message not yet in the session
+	enrichedQuery := buildContextualChannelQuery(msg2, nil)
+	if !strings.Contains(enrichedQuery, "Khách ở căn A12 báo hỏng điều hòa trung tâm") || !strings.Contains(enrichedQuery, "quy trình bảo hành thiết bị này thế nào?") {
+		t.Fatalf("expected buildContextualChannelQuery to inject replied-to text, got %q", enrichedQuery)
+	}
+
+	// Verify callback session resolution maps assistant message ID back to its thread session
+	rememberChannelReplySession("assistant-msg-thread-2", sess2.ID)
+	resolvedSessionID := svc.resolveChannelCallbackSessionID(ctx, "dialog-1", "cc-tg", "-100555", "assistant-msg-thread-2")
+	if resolvedSessionID != sess2.ID {
+		t.Fatalf("expected callback session ID %s, got %s", sess2.ID, resolvedSessionID)
+	}
+}
+
+func createServiceTestCanvas(t *testing.T, db *gorm.DB, id, userID, title, category string, dsl entity.JSONMap) *entity.UserCanvas {
+	t.Helper()
+	tStr := title
+	cType := "agent"
+	uc := &entity.UserCanvas{
+		ID:             id,
+		UserID:         userID,
+		Title:          &tStr,
+		Permission:     "me",
+		CanvasType:     &cType,
+		CanvasCategory: category,
+		DSL:            dsl,
+	}
+	if err := db.Create(uc).Error; err != nil {
+		t.Fatalf("failed to create user canvas: %v", err)
+	}
+	return uc
+}
+
+func TestChatChannelServiceAgentBindingMutualExclusionAndAntiIDOR(t *testing.T) {
+	db := setupChatChannelServiceTestDB(t)
+	createServiceTestDialog(t, db, "dialog-1", "tenant-1", "Assistant A")
+	createServiceTestCanvas(t, db, "agent-1", "tenant-1", "Agent QLTN", "agent_canvas", entity.JSONMap{})
+	createServiceTestCanvas(t, db, "agent-other", "tenant-2", "Foreign Agent", "agent_canvas", entity.JSONMap{})
+	createServiceTestCanvas(t, db, "dataflow-1", "tenant-1", "Dataflow Pipeline", "dataflow_canvas", entity.JSONMap{})
+	createServiceTestCanvas(t, db, "dataflow-other", "tenant-2", "Foreign Dataflow", "dataflow_canvas", entity.JSONMap{})
+
+	svc := NewChatChannelService()
+	ctx := t.Context()
+
+	// 1. Create with both chat_id and agent_id -> must reject with ChatChannelDataError
+	chatID := "dialog-1"
+	agentID := "agent-1"
+	if _, err := svc.CreateChatChannel(ctx, "tenant-1", "bot-both", "telegram", entity.JSONMap{}, &chatID, &agentID); err == nil {
+		t.Fatal("expected mutual exclusion error when both chat_id and agent_id are set")
+	}
+
+	// 2. Create with agent_id and whitespace chat_id -> normalizes whitespace to nil and succeeds
+	blankChat := "   "
+	ch, err := svc.CreateChatChannel(ctx, "tenant-1", "Thần Nông FAQ-Bot", "telegram", entity.JSONMap{"bot_token": "tg"}, &blankChat, &agentID)
+	if err != nil {
+		t.Fatalf("CreateChatChannel with agent_id failed: %v", err)
+	}
+	if ch.AgentID == nil || *ch.AgentID != "agent-1" || ch.ChatID != nil {
+		t.Fatalf("expected agent_id=agent-1 and chat_id=nil, got agent_id=%v chat_id=%v", ch.AgentID, ch.ChatID)
+	}
+
+	// 3. List returns agent_id and agent_name
+	list, err := svc.List(ctx, "tenant-1")
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	if len(list) != 1 || list[0].AgentID == nil || *list[0].AgentID != "agent-1" || list[0].AgentName == nil || *list[0].AgentName != "Agent QLTN" {
+		t.Fatalf("unexpected List response: %+v", list[0])
+	}
+
+	// 4. Switch from Agent to Chat Assistant -> clears agent_id = nil
+	updated, code, err := svc.UpdateChatChannel(ctx, "tenant-1", ch.ID, map[string]interface{}{
+		"chat_id": "dialog-1",
+	})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateChatChannel to chat_id failed: code=%v err=%v", code, err)
+	}
+	if updated.ChatID == nil || *updated.ChatID != "dialog-1" || updated.AgentID != nil {
+		t.Fatalf("expected chat_id=dialog-1 and agent_id=nil, got chat_id=%v agent_id=%v", updated.ChatID, updated.AgentID)
+	}
+
+	// 5. Switch from Chat Assistant back to Agent -> clears chat_id = nil
+	updated, code, err = svc.UpdateChatChannel(ctx, "tenant-1", ch.ID, map[string]interface{}{
+		"agent_id": "agent-1",
+	})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateChatChannel to agent_id failed: code=%v err=%v", code, err)
+	}
+	if updated.AgentID == nil || *updated.AgentID != "agent-1" || updated.ChatID != nil {
+		t.Fatalf("expected agent_id=agent-1 and chat_id=nil, got agent_id=%v chat_id=%v", updated.AgentID, updated.ChatID)
+	}
+
+	// 6. Anti-IDOR: Cross-tenant agent_canvas -> CodeNotFound
+	if _, code, err = svc.UpdateChatChannel(ctx, "tenant-1", ch.ID, map[string]interface{}{
+		"agent_id": "agent-other",
+	}); code != common.CodeNotFound || !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("expected CodeNotFound for cross-tenant agent, got code=%v err=%v", code, err)
+	}
+
+	// 7. Anti-IDOR order: Cross-tenant dataflow_canvas -> MUST return CodeNotFound (permission check before category check)
+	if _, code, err = svc.UpdateChatChannel(ctx, "tenant-1", ch.ID, map[string]interface{}{
+		"agent_id": "dataflow-other",
+	}); code != common.CodeNotFound || !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("expected CodeNotFound for cross-tenant dataflow canvas (no category oracle), got code=%v err=%v", code, err)
+	}
+
+	// 8. Own dataflow_canvas -> CodeDataError ("Can't find this Agent!")
+	if _, code, err = svc.UpdateChatChannel(ctx, "tenant-1", ch.ID, map[string]interface{}{
+		"agent_id": "dataflow-1",
+	}); code != common.CodeDataError || err == nil || !strings.Contains(err.Error(), "Can't find this Agent!") {
+		t.Fatalf("expected CodeDataError 'Can't find this Agent!' for own dataflow_canvas, got code=%v err=%v", code, err)
+	}
+
+	// 9. Unbind Agent by passing agent_id: "" -> clears agent_id = nil
+	updated, code, err = svc.UpdateChatChannel(ctx, "tenant-1", ch.ID, map[string]interface{}{
+		"agent_id": "",
+	})
+	if err != nil || code != common.CodeSuccess || updated.AgentID != nil {
+		t.Fatalf("expected agent_id=nil after unbind, got code=%v err=%v agent_id=%v", code, err, updated.AgentID)
+	}
+}
+
+func TestChatChannelServiceHandleIncomingAgentMessageMultiTurnAndFeedback(t *testing.T) {
+	db := setupChatChannelServiceTestDB(t)
+	ctx := t.Context()
+
+	dsl := map[string]any{
+		"globals": map[string]any{},
+		"components": map[string]any{
+			"begin_0": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Begin",
+					"params":         map[string]any{},
+				},
+				"downstream": []any{"message_0"},
+			},
+			"message_0": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Message",
+					"params":         map[string]any{"text": "Agent trả lời: {{sys.query}}"},
+				},
+				"upstream": []any{"begin_0"},
+			},
+		},
+		"path": []any{"begin_0", "message_0"},
+		"feedback_config": map[string]any{
+			"enabled": true,
+			"mode":    "multi_criteria",
+			"criteria": []any{
+				map[string]any{"key": "accuracy", "label": "Độ chính xác", "type": "binary"},
+				map[string]any{"key": "satisfaction", "label": "Mức độ hài lòng", "type": "stars"},
+			},
+		},
+	}
+
+	makeCanvasWithDSL(t, "agent-qltn", "tenant-1", "tenant-1", "v-qltn-1", dsl)
+	// Also save feedback_config on UserCanvas.DSL so channel feedback button builder reads it
+	if err := db.Model(&entity.UserCanvas{}).Where("id = ?", "agent-qltn").Update("dsl", entity.JSONMap(dsl)).Error; err != nil {
+		t.Fatalf("update canvas dsl: %v", err)
+	}
+
+	agentID := "agent-qltn"
+	createServiceTestChannel(t, db, &entity.ChatChannel{
+		ID:       "cc-tg-agent",
+		TenantID: "tenant-1",
+		Name:     "Thần Nông FAQ-Bot",
+		Channel:  "telegram",
+		Config:   entity.JSONMap{"bot_token": "tg-token"},
+		AgentID:  &agentID,
+		Status:   1,
+	})
+
+	svc := NewChatChannelService()
+
+	// Turn 1: Incoming Telegram message
+	msg1 := ChatChannelIncomingMessage{
+		Channel:        "telegram",
+		AccountID:      "cc-tg-agent",
+		ChatID:         "998877",
+		ChatType:       "private",
+		MessageID:      "501",
+		SenderID:       "998877",
+		SenderName:     "Hoàng Nông Dân",
+		SenderUsername: "hoangnd",
+		Text:           "Lúa bị vàng lá phải làm sao?",
+	}
+	reply1, err := svc.HandleIncomingChannelMessage(ctx, msg1)
+	if err != nil {
+		t.Fatalf("HandleIncomingChannelMessage turn 1 failed: %v", err)
+	}
+	if reply1 == nil || !strings.Contains(reply1.Answer, "Agent trả lời: Lúa bị vàng lá phải làm sao?") {
+		t.Fatalf("unexpected reply1: %+v", reply1)
+	}
+	if reply1.MessageID == "" {
+		t.Fatal("expected non-empty reply1.MessageID")
+	}
+	if len(reply1.InlineButtons) == 0 {
+		t.Fatal("expected inline rating buttons when feedback_config is enabled on Agent DSL")
+	}
+
+	// Verify API4Conversation row preserves user_id = tenant-1 and sets exp_user_id + session name
+	sessionID := channelSessionID("agent-qltn", "cc-tg-agent", "998877")
+	conv, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, db, sessionID, "agent-qltn")
+	if err != nil || conv == nil {
+		t.Fatalf("failed to load agent session %s: %v", sessionID, err)
+	}
+	if conv.UserID != "tenant-1" {
+		t.Fatalf("expected conv.UserID to stay channel.TenantID ('tenant-1'), got %q", conv.UserID)
+	}
+	if conv.ExpUserID == nil || *conv.ExpUserID != "@hoangnd (Hoàng Nông Dân)" {
+		t.Fatalf("expected conv.ExpUserID '@hoangnd (Hoàng Nông Dân)', got %v", conv.ExpUserID)
+	}
+	if conv.Name == nil || !strings.HasPrefix(*conv.Name, "(channel: Thần Nông FAQ-Bot | @hoangnd (Hoàng Nông Dân)) Lúa bị vàng lá phải làm sao?") {
+		t.Fatalf("unexpected conv.Name: %v", conv.Name)
+	}
+
+	// Turn 2: Multi-turn follow-up on the same session MUST succeed without permission or UpdateHistory failure
+	msg2 := ChatChannelIncomingMessage{
+		Channel:        "telegram",
+		AccountID:      "cc-tg-agent",
+		ChatID:         "998877",
+		ChatType:       "private",
+		MessageID:      "502",
+		SenderID:       "998877",
+		SenderName:     "Hoàng Nông Dân",
+		SenderUsername: "hoangnd",
+		Text:           "Bón phân gì để phục hồi?",
+	}
+	reply2, err := svc.HandleIncomingChannelMessage(ctx, msg2)
+	if err != nil {
+		t.Fatalf("HandleIncomingChannelMessage turn 2 failed: %v", err)
+	}
+	if reply2 == nil || !strings.Contains(reply2.Answer, "Agent trả lời: Bón phân gì để phục hồi?") {
+		t.Fatalf("unexpected reply2: %+v", reply2)
+	}
+
+	// Multi-criteria Telegram callback query on Turn 2 assistant message
+	// Step 1: Criterion 0 (binary = 1)
+	cb1, err := svc.HandleCallbackQuery(ctx, core.CallbackQuery{
+		Channel:   "telegram",
+		AccountID: "cc-tg-agent",
+		ChatID:    "998877",
+		MessageID: "600",
+		SenderID:  "998877",
+		Data:      "fb:" + reply2.MessageID + ":c0:1",
+	})
+	if err != nil {
+		t.Fatalf("HandleCallbackQuery step 1 failed: %v", err)
+	}
+	if cb1 == nil || !strings.Contains(cb1.ToastText, "Đã lưu (1/2)") || len(cb1.InlineButtons) == 0 {
+		t.Fatalf("unexpected cb1 result: %+v", cb1)
+	}
+
+	// Step 2: Criterion 1 (stars = 5)
+	cb2, err := svc.HandleCallbackQuery(ctx, core.CallbackQuery{
+		Channel:   "telegram",
+		AccountID: "cc-tg-agent",
+		ChatID:    "998877",
+		MessageID: "600",
+		SenderID:  "998877",
+		Data:      "fb:" + reply2.MessageID + ":c1:5",
+	})
+	if err != nil {
+		t.Fatalf("HandleCallbackQuery step 2 failed: %v", err)
+	}
+	if cb2 == nil || !strings.Contains(cb2.ToastText, "Cảm ơn bạn đã hoàn tất đánh giá!") {
+		t.Fatalf("unexpected cb2 result: %+v", cb2)
+	}
+
+	// Verify both criteria were persisted in api_4_conversation_message
+	convAfter, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, db, sessionID, "agent-qltn")
+	if err != nil || convAfter == nil {
+		t.Fatalf("failed to reload conv: %v", err)
+	}
+	msgsAfter := parseMessages(convAfter.Message)
+	foundFeedback := false
+	for _, m := range msgsAfter {
+		if stringValue(m["id"]) == reply2.MessageID && stringValue(m["role"]) == "assistant" {
+			detail, _ := m["feedback_detail"].(map[string]interface{})
+			crit, _ := detail["criteria"].(map[string]interface{})
+			if crit["accuracy"] == true && crit["satisfaction"] == float64(5) {
+				foundFeedback = true
+			}
+		}
+	}
+	if !foundFeedback {
+		t.Fatalf("expected persisted multi-criteria feedback on message %s, got messages=%+v", reply2.MessageID, msgsAfter)
+	}
+
+	// DeleteAgent cleanup: deleting the bound agent must unlink chat_channel.agent_id = NULL
+	agentSvc := NewAgentService()
+	if err := agentSvc.DeleteAgent(ctx, "tenant-1", "agent-qltn"); err != nil {
+		t.Fatalf("DeleteAgent failed: %v", err)
+	}
+	chAfter, err := dao.NewChatChannel().GetByID(ctx, db, "cc-tg-agent")
+	if err != nil {
+		t.Fatalf("GetByID channel after DeleteAgent failed: %v", err)
+	}
+	if chAfter.AgentID != nil {
+		t.Fatalf("expected chat_channel.agent_id to be nil after DeleteAgent, got %v", chAfter.AgentID)
+	}
 }

@@ -2,11 +2,13 @@
     "id": 26,
     "title": {
         "en": "Stock market research assistant",
+        "vi": "Trợ lý Phân tích Tài chính & Thị trường Chứng khoán",
         "de": "Assistent für Börsenforschung",
         "zh": "股市研究助手"
     },
     "description": {
         "en": "This template helps financial analysts quickly organize information — it can automatically retrieve company data, consolidate financial metrics, and integrate research report insights.",
+        "vi": "Hỗ trợ chuyên viên phân tích tài chính tự động thu thập thông tin doanh nghiệp niêm yết, tổng hợp các chỉ số tài chính từ Yahoo Finance / Web và kết hợp báo cáo phân tích trong kho tri thức nội bộ. Tình huống sử dụng: Lập báo cáo phân tích cổ phiếu, theo dõi biến động vĩ mô và đánh giá sức khỏe tài chính.",
         "de": "Diese Vorlage hilft Finanzanalysten, Informationen schnell zu organisieren – der Agent kann automatisch Unternehmensdaten abrufen, Finanzkennzahlen konsolidieren und Forschungsberichte integrieren.",
         "zh": "这个模板可以帮助金融分析师快速整理信息——它能够自动获取公司数据、整合财务指标，并汇总研报观点。"
     },

@@ -28,6 +28,7 @@ import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { TFunction } from 'i18next';
 import {
+  LucideBarChart3,
   LucideBox,
   LucideLogOut,
   LucideMessagesSquare,
@@ -46,6 +47,12 @@ const menuItems = (t: TFunction) => [
     label: t('setting.model'),
     key: Routes.Model,
     'data-testid': 'settings-nav-model-providers',
+  },
+  {
+    icon: <LucideBarChart3 className="size-[1em]" />,
+    label: t('setting.tokenUsage', { defaultValue: 'Token & Chi phí (FinOps)' }),
+    key: Routes.TokenUsage,
+    'data-testid': 'settings-nav-token-usage',
   },
   {
     icon: <LucideServer className="size-[1em]" />,

@@ -192,7 +192,9 @@ export default {
     },
     knowledgeConfiguration: {
       parsingMode: 'Chế độ phân tích',
-      builtInSuffix: ' (built in)',
+      builtInSuffix: ' (dựng sẵn)',
+      builtInPipelines:
+        'Quy trình xử lý tài liệu dựng sẵn (Built-in Pipelines)',
       imageTableContextWindow: 'Cửa sổ ngữ cảnh hình ảnh & bảng',
       imageTableContextWindowTip:
         'Trích xuất N token văn bản phía trên và phía dưới hình ảnh và bảng để cung cấp bối cảnh phong phú hơn.',
@@ -512,7 +514,10 @@ export default {
       partialTitle: 'Nhúng một phần',
       extensionTitle: 'Phần mở rộng Chrome',
       tokenError: 'Vui lòng tạo Token API trước tiên!',
-      searching: 'đang tìm kiếm...',
+      searching: 'Đang tìm kiếm dữ liệu...',
+      typingIndicator: 'Đang soạn câu trả lời...',
+      thinking: 'Đang suy nghĩ',
+      thought: 'Quá trình suy luận',
       parsing: 'Phân tích cú pháp',
       uploading: 'Đang tải lên',
       uploadFailed: 'Tải lên thất bại',
@@ -749,6 +754,121 @@ export default {
         'Nếu nhà cung cấp mô hình của bạn không có trong danh sách nhưng tuyên bố tương thích với "OpenAI", hãy chọn thẻ OpenAI-API-compatible để thêm mô hình liên quan.',
       dingtalkAITableDescription:
         'Kết nối với Dingtalk AI Table và đồng bộ hóa bản ghi từ một bảng được chỉ định.',
+      githubDescription:
+        'Kết nối GitHub để đồng bộ thư mục tài liệu, mã nguồn, Pull Requests và Issues phục vụ truy xuất.',
+      dataSourceIncludeDocsAndCodeFiles:
+        'Bao gồm Tệp trong Repository (Tài liệu / Mã nguồn)',
+      dataSourceFieldBranch: 'Nhánh (Branch)',
+      dataSourceFieldBranchTip:
+        'Nhánh cần đồng bộ tệp (ví dụ: main). Để trống để dùng nhánh mặc định của repository.',
+      dataSourceOptionEntireRepository: 'Toàn bộ Repository',
+      dataSourceOptionSpecificFolder: 'Thư mục chỉ định',
+      dataSourceFieldFolderPath: 'Đường dẫn thư mục (Folder Path)',
+      dataSourceFieldFolderPathTip:
+        'Đường dẫn thư mục tương đối trong repository cần đồng bộ đệ quy (ví dụ: docs hoặc docs/api). Mọi tệp sẽ tự động được gắn meta_fields.web_url trỏ tới GitHub và tự động lập chỉ mục khi liên kết Dataset.',
+      dataSourceGithubSyncScopeTip:
+        'Chọn "Thư mục chỉ định" để chỉ đồng bộ một thư mục cụ thể (như docs/) hoặc "Toàn bộ Repository" để đồng bộ toàn bộ tệp tài liệu/mã nguồn hợp lệ trong repository.',
+      dataSourceGithubAtLeastOneSourceRequired:
+        'Vui lòng bật ít nhất một trong: Pull Requests, Issues, hoặc Tệp trong Repository.',
+      githubWorkflowGuideButton: 'Hướng dẫn GitHub Actions CI/CD',
+      githubWorkflowGuideModalTitle:
+        'Hướng dẫn tích hợp GitHub Actions CI/CD → RAGFlow API',
+      githubWorkflowGuideModalSubtitle:
+        'Sử dụng mẫu GitHub Actions Workflow bên dưới nếu bạn muốn mỗi khi push commit lên GitHub sẽ tự động đẩy tệp tài liệu qua RAGFlow REST API v1 và kích hoạt phân đoạn ngay lập tức.',
+      githubWorkflowGuideStep1Title:
+        'Bước 1: Cấu hình Repository Secrets trên GitHub',
+      githubWorkflowGuideStep1Desc:
+        'Trong repository GitHub của bạn, truy cập Settings → Secrets and variables → Actions → New repository secret và thêm 2 biến sau:',
+      githubWorkflowGuideSecretApiKeyDesc:
+        'Khóa API của RAGFlow (tạo tại mục Cài đặt người dùng → API trong RAGFlow).',
+      githubWorkflowGuideSecretDatasetIdDesc:
+        'ID của Dataset đích (lấy từ đường dẫn /dataset/files/<dataset_id>).',
+      githubWorkflowGuideStep2Title:
+        'Bước 2: Tạo tệp Workflow (.github/workflows/sync-ragflow.yml)',
+      githubWorkflowGuideStep2Desc:
+        'Đoạn mã YAML bên dưới đã được điền sẵn theo cấu hình trên form của bạn và thực hiện đồng bộ Idempotent (xóa bản ghi cũ trùng tên, tải bản mới lên và gọi API kích hoạt phân đoạn):',
+      githubWorkflowGuideCopyButton: 'Sao chép YAML Workflow',
+      githubWorkflowGuideCopied: 'Đã sao chép vào bộ nhớ tạm!',
+      githubWorkflowGuideNativeSyncNote:
+        'Mẹo: Bạn cũng có thể bật trực tiếp tùy chọn "Bao gồm Tệp trong Repository (Tài liệu / Mã nguồn)" ngay trên màn hình cấu hình này và liên kết với Dataset (bật Auto-Parse) — hệ thống sẽ tự động kéo (Pull) và lập chỉ mục thư mục chỉ định mà không cần dựng CI/CD.',
+      sitemapDescription:
+        'Kết nối tệp sitemap.xml công khai (hoặc bật mở rộng liên kết trang) để đồng bộ các trang web và tài liệu PDF vào Kho tri thức.',
+      dataSourceFieldSitemapUrl: 'Đường dẫn Sitemap (Sitemap URL)',
+      sitemapUrlTip:
+        'URL của tệp sitemap.xml hoặc sitemap index cần thu thập (ví dụ: https://example.com/sitemap.xml). Nếu website có sitemap.xml bị thiếu đường dẫn (như một số trang Nuxt/Next.js chỉ có 1 URL trang chủ), hãy bật tùy chọn "Mở rộng quét liên kết trang" bên dưới hoặc dùng nguồn dữ liệu "Web Crawler (Spider)".',
+      dataSourceFieldUrlFilter: 'Bộ lọc URL (Regex tùy chọn)',
+      sitemapUrlFilterTip:
+        'Biểu thức chính quy (Regex) tùy chọn. Chỉ các URL khớp với mẫu này mới được lập chỉ mục (ví dụ: ^https://example\\.com/docs/ để chỉ lấy phần tài liệu).',
+      sitemapFollowPageLinks:
+        'Mở rộng quét liên kết HTML & SSR từ các trang trong Sitemap',
+      sitemapFollowPageLinksTip:
+        'Bật tùy chọn này khi tệp sitemap.xml của website bị thiếu bài viết (ví dụ: chỉ liệt kê mỗi trang chủ). Hệ thống sẽ tự động quét thêm các thẻ <a href> và dữ liệu SSR Hydration (__NUXT_DATA__, __NEXT_DATA__) bên trong các trang để thu thập đầy đủ các bài viết cùng tên miền.',
+      sitemapMaxPageDepth: 'Độ sâu mở rộng liên kết trang (Max Page Depth)',
+      sitemapMaxPageDepthTip:
+        'Số cấp độ liên kết tối đa sẽ đi theo từ các URL gốc trong Sitemap (khuyên dùng: 1 hoặc 2).',
+      dataSourceFieldFollowPdfLinks: 'Thu thập cả tệp PDF đính kèm trong trang',
+      sitemapFollowPdfLinksTip:
+        'Tự động phát hiện và tải về các tệp tài liệu .pdf được dẫn link bên trong các trang HTML.',
+      dataSourceFieldRestrictPdfToDomain: 'Chỉ tải PDF thuộc cùng tên miền',
+      sitemapRestrictPdfToDomainTip:
+        'Chỉ tải các tệp PDF nằm trên cùng tên miền (domain) với website đang quét.',
+      dataSourceFieldUserAgent: 'User-Agent tùy chỉnh',
+      sitemapUserAgentTip:
+        'Chuỗi định danh trình duyệt (User-Agent) gửi kèm mỗi yêu cầu HTTP. Để trống để dùng mặc định.',
+      dataSourceFieldBatchSize: 'Kích thước lô đồng bộ (Batch Size)',
+      sitemapBatchSizeTip:
+        'Số lượng trang được tải và đẩy vào hàng đợi xử lý trong mỗi lô (mặc định: 10).',
+      webCrawlerDescription:
+        'Trình thu thập dữ liệu Website & CMS thông minh (Spider): tự động khám phá liên kết đa tầng (BFS), hỗ trợ cả Website HTML truyền thống lẫn các cổng CMS hiện đại dùng Nuxt 3 / Next.js / Vue / React SSR (như cms.demego.vn) không có Sitemap đầy đủ.',
+      webCrawlerStartUrl: 'URL Bắt đầu (Start URL)',
+      webCrawlerStartUrlTip:
+        'Nhập địa chỉ trang chủ, cổng tài liệu hướng dẫn (CMS/Docs) hoặc chuyên mục gốc cần thu thập (ví dụ: https://cms.demego.vn/). Trình thu thập sẽ xuất phát từ URL này để khám phá các bài viết con.',
+      webCrawlerCrawlMode: 'Cơ chế Thu thập & Loại Website (Crawl Mode)',
+      webCrawlerModeAuto:
+        'Tự động thông minh (Khuyên dùng - Kết hợp HTML + SSR/Nuxt/Next + Sitemap)',
+      webCrawlerModeHtmlLinks:
+        'Website HTML / CMS truyền thống (WordPress, Wiki, Docs tĩnh - Quét thẻ <a href>)',
+      webCrawlerModeSsrSpa:
+        'Website Nuxt 3 / Next.js / Vue / React SSR (Như cms.demego.vn - Quét Hydration JSON + API)',
+      webCrawlerModeSitemapHybrid:
+        'Ưu tiên Sitemap XML kết hợp mở rộng liên kết bài viết (Sitemap Hybrid)',
+      webCrawlerCrawlModeTip:
+        'Hướng dẫn chọn cơ chế phù hợp với từng loại Website:\n' +
+        '• Tự động thông minh (auto - Khuyên dùng): Tự động thử Sitemap, quét liên kết <a href>, đồng thời giải mã dữ liệu ngầm SSR (__NUXT_DATA__, __NEXT_DATA__) và API phân trang (/api/posts). Xử lý tốt mọi loại website.\n' +
+        '• Website HTML truyền thống (html_links): Phù hợp với WordPress, Joomla, Docusaurus, GitBook hoặc trang tĩnh có đầy đủ thẻ <a href="..."> trên menu/danh mục.\n' +
+        '• Website Nuxt 3 / Next.js / SSR SPA (ssr_spa): Thiết kế chuyên biệt cho các cổng CMS hiện đại (ví dụ: https://cms.demego.vn/) nơi sitemap.xml chỉ có 1 URL trang chủ và danh sách bài viết nằm trong payload JSON Hydration hoặc API phân trang.\n' +
+        '• Sitemap Hybrid (sitemap_hybrid): Đọc danh sách từ /sitemap.xml trước, sau đó tiếp tục đi theo các liên kết bài viết phát hiện trên từng trang.',
+      webCrawlerExtractStrategy:
+        'Chiến lược Bóc tách Nội dung (Extraction Strategy)',
+      webCrawlerExtractClean:
+        'Bài viết sạch - Tự động lọc bỏ Menu/Sidebar/Header/Footer lặp lại (Khuyên dùng cho RAG)',
+      webCrawlerExtractFull:
+        'Toàn bộ trang - Giữ nguyên toàn bộ văn bản trên trang HTML',
+      webCrawlerExtractStrategyTip:
+        '• Bài viết sạch (article_clean - Khuyên dùng): Tập trung trích xuất khối nội dung chính (<article>, <main>, .post-content) và loại bỏ thanh điều hướng (<nav>, <aside>, <footer>). Giúp ngăn chặn tình trạng menu 200-300 mục bị lặp lại ở mọi bài viết làm nhiễu kết quả tìm kiếm Vector RAG.\n' +
+        '• Toàn bộ trang (full_page): Giữ lại toàn bộ chữ hiển thị trên trang (phù hợp với trang Landing Page không dùng thẻ ngữ nghĩa <article>/<main>).',
+      webCrawlerMaxDepth: 'Độ sâu Quét liên kết (Max Depth)',
+      webCrawlerMaxDepthTip:
+        'Số bước nhảy liên kết tối đa tính từ URL Bắt đầu (0 = chỉ lấy đúng 1 trang Start URL; 1 = lấy Start URL + toàn bộ bài viết dẫn link trực tiếp từ trang chủ; 2..3 = quét sâu vào các danh mục con). Với các trang CMS như cms.demego.vn, đặt từ 1 đến 2 là thu thập trọn vẹn 100% bài viết.',
+      webCrawlerMaxPages: 'Giới hạn Số trang Tối đa (Max Pages)',
+      webCrawlerMaxPagesTip:
+        'Số lượng bài viết/trang tối đa cho phép thu thập trong một phiên đồng bộ (từ 1 đến 5000, mặc định: 300) nhằm kiểm soát thời gian và tài nguyên.',
+      webCrawlerSameDomainOnly:
+        'Chỉ quét các trang thuộc cùng tên miền (Same Domain Only)',
+      webCrawlerSameDomainOnlyTip:
+        'Khi bật (mặc định), trình thu thập chỉ đi theo các đường dẫn nằm trong cùng domain với URL Bắt đầu và tự động bỏ qua các liên kết trỏ ra mạng xã hội hoặc website bên ngoài.',
+      webCrawlerUrlFilter: 'Bộ lọc URL Cho phép - Regex (Include Filter)',
+      webCrawlerUrlFilterTip:
+        'Tùy chọn: Nhập biểu thức chính quy (Regex) để CHỈ thu thập các đường dẫn khớp mẫu (ví dụ: ^https://cms\\.demego\\.vn/quan-ly-.*). Để trống để lấy toàn bộ bài viết.',
+      webCrawlerExcludeUrlFilter:
+        'Bộ lọc URL Loại trừ - Regex (Exclude Filter)',
+      webCrawlerExcludeUrlFilterTip:
+        'Tùy chọn: Nhập biểu thức chính quy (Regex) để BỎ QUA các đường dẫn không cần thiết như trang đăng nhập, giỏ hàng, quản trị (ví dụ: /(login|register|admin|cart|tag/)).',
+      webCrawlerCrawlDelayMs: 'Độ trễ giữa các lần tải trang (ms)',
+      webCrawlerCrawlDelayMsTip:
+        'Thời gian nghỉ (tính bằng mili-giây) giữa 2 lần tải trang liên tiếp để tránh làm quá tải máy chủ đích hoặc bị chặn Rate-Limit (mặc định: 100ms).',
+      searchDataSource: 'Tìm kiếm nguồn dữ liệu...',
+      noDataSourceFound: 'Không tìm thấy nguồn dữ liệu phù hợp',
     },
     message: {
       registered: 'Đã đăng ký!',
@@ -1266,6 +1386,59 @@ export default {
       created: 'Đã tạo',
       id: 'ID',
       logTitle: 'Tiêu đề',
+      agents: 'Danh sách Agent & Pipeline',
+      recommended: 'Đề xuất nổi bật',
+      agent: 'Agent thông minh',
+      customerSupport: 'Chăm sóc khách hàng',
+      marketing: 'Marketing & Nội dung',
+      consumerApp: 'Ứng dụng tiện ích',
+      ingestionPipeline: 'Quy trình nạp dữ liệu (Ingestion Pipeline)',
+      other: 'Khác',
+      createFromBlank: 'Tạo từ trang trắng',
+      createFromTemplate: 'Tạo từ mẫu dựng sẵn',
+      importJsonFile: 'Nhập tệp JSON',
+      duplicate: 'Nhân bản',
+      copyOfAgentName: '{{name}} (Bản sao)',
+      ceateAgent: 'Luồng Agent (Workflow)',
+      createPipeline: 'Quy trình nạp dữ liệu (Ingestion Pipeline)',
+      createIngestionPipeline: 'Tạo quy trình nạp dữ liệu (Ingestion Pipeline)',
+      createWorkflow: 'Tạo luồng Agent (Workflow)',
+      chooseAgentType: 'Chọn loại luồng muốn khởi tạo',
+      retrievalDatasetRequired: 'Vui lòng chọn ít nhất một cơ sở tri thức',
+      retrievalMemoryRequired: 'Vui lòng chọn bộ nhớ trước',
+      retrievalTemplateDatasetHint:
+        'Mẫu này chứa {{num}} bước truy xuất (Retrieval) chưa gắn Dataset. Hãy chọn Dataset bên dưới để tự động gắn vào toàn bộ các bước.',
+      retrievalTemplateMemoryHint:
+        'Mẫu này chứa {{num}} bước truy xuất chưa gắn Bộ nhớ (Memory). Hãy chọn bộ nhớ bên dưới để áp dụng.',
+      createByAI: 'Tạo bằng AI (AI Brain)',
+      createByAITitle: 'Kiến trúc sư AI Brain — Tạo Agent & Pipeline từ mô tả',
+      createByAIDescription:
+        'Mô tả nhu cầu nghiệp vụ của bạn bằng ngôn ngữ tự nhiên. AI Brain sẽ tự động phân tích, lựa chọn các Action Node tối ưu trong hệ sinh thái RAGFlow, thiết lập Prompt/Cấu hình và dàn trang đồ thị hoàn chỉnh.',
+      aiPromptLabel: 'Mô tả bài toán hoặc quy trình bạn muốn xây dựng',
+      aiPromptPlaceholder:
+        'Ví dụ: Xây dựng trợ lý CSKH tự động phân loại câu hỏi kỹ thuật và khiếu nại đơn hàng. Nếu là câu hỏi kỹ thuật thì tra cứu Dataset hướng dẫn sử dụng để trả lời; nếu là khiếu nại thì gửi email cảnh báo cho bộ phận quản lý...',
+      aiPromptRequired:
+        'Vui lòng nhập mô tả nhu cầu của bạn (ít nhất 10 ký tự)',
+      aiCategoryLabel: 'Loại luồng mục tiêu',
+      aiCategoryAuto: 'Tự động nhận diện (AI quyết định)',
+      aiCategoryAgent: 'Agent Workflow (Chat / Tác vụ thông minh / Đa công cụ)',
+      aiCategoryDataflow: 'Ingestion Pipeline (Bóc tách & làm giàu Dataset)',
+      aiQuickPromptsLabel: 'Gợi ý kịch bản mẫu (Nhấp để điền nhanh)',
+      aiGeneratePreviewBtn: 'Phân tích & Xem trước Kiến trúc',
+      aiDirectCreateBtn: 'Tạo & Mở ngay (1-Click)',
+      aiGeneratingText:
+        'AI Brain đang thiết kế kiến trúc Node & kết nối DSL...',
+      aiCreatingText: 'Đang khởi tạo và mở Canvas...',
+      aiPreviewSectionTitle: 'Kiến trúc đề xuất bởi AI Brain',
+      aiPreviewNodesCount: '{{count}} Action Nodes được cấu hình tự động',
+      aiFallbackNotice:
+        'Hệ thống đã sử dụng bộ tổng hợp kiến trúc thông minh theo quy tắc (Rule-based Smart Synthesizer) do mô hình LLM chưa sẵn sàng hoặc phản hồi chậm.',
+      aiConfirmCreateBtn: 'Tạo & Mở trên Canvas',
+      aiReGenerateBtn: 'Phân tích lại',
+      aiModelOptionalHint:
+        'Tùy chọn: Chọn mô hình LLM ưu tiên cho các Node suy luận (để trống sẽ tự động lấy mô hình mặc định của hệ thống).',
+      aiDatasetOptionalHint:
+        'Tùy chọn: Chọn sẵn các Dataset nếu luồng của bạn cần tra cứu tri thức nội bộ (Node Retrieval).',
     },
     footer: {
       profile: 'All rights reserved @ React',

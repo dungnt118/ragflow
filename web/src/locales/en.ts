@@ -1245,6 +1245,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       betaError:
         'Please acquire a RAGFlow API Key from the System Settings page first.',
       searching: 'Searching...',
+      typingIndicator: 'Typing a response...',
       parsing: 'Parsing',
       uploading: 'Uploading',
       uploadFailed: 'Upload failed',
@@ -1754,6 +1755,59 @@ Example: Virtual Hosted Style`,
         'User-Agent header sent with every request. Leave empty to use RAGFlow-SitemapConnector/1.0.',
       sitemapBatchSizeTip:
         'Number of pages fetched and sent to RAGFlow per batch.',
+      sitemapFollowPageLinks:
+        'Follow HTML & SSR page links to expand incomplete sitemaps',
+      sitemapFollowPageLinksTip:
+        'Enable this when the target website has an incomplete sitemap.xml (for example, listing only the root homepage). RAGFlow will discover same-domain links from <a href> and SSR hydration payloads (__NUXT_DATA__, __NEXT_DATA__).',
+      sitemapMaxPageDepth: 'Max Page Link Depth',
+      sitemapMaxPageDepthTip:
+        'Maximum link hop depth to follow from sitemap entries when Follow Page Links is enabled (1 to 5).',
+      webCrawlerDescription:
+        'Intelligent Website & CMS Spider: recursively crawls web pages (BFS), supporting both traditional HTML sites and modern Nuxt 3 / Next.js / Vue / React SSR portals (e.g., cms.demego.vn) where sitemaps are missing or incomplete.',
+      webCrawlerStartUrl: 'Start URL',
+      webCrawlerStartUrlTip:
+        'Enter the root homepage, documentation portal, or category URL to start crawling from (e.g., https://cms.demego.vn/).',
+      webCrawlerCrawlMode: 'Crawl Mechanism & Website Type (Crawl Mode)',
+      webCrawlerModeAuto:
+        'Smart Auto-Detect (Recommended - HTML + SSR/Nuxt/Next + Sitemap)',
+      webCrawlerModeHtmlLinks:
+        'Traditional HTML / Static CMS (Crawl <a href> links)',
+      webCrawlerModeSsrSpa:
+        'Nuxt 3 / Next.js / Vue / React SSR Portal (Hydration JSON + API pagination)',
+      webCrawlerModeSitemapHybrid:
+        'Sitemap XML + Page Link Expansion (Sitemap Hybrid)',
+      webCrawlerCrawlModeTip:
+        'How to choose the right crawl mode for your target website:\n' +
+        '• Smart Auto-Detect (auto - Recommended): Automatically combines sitemap seeding, <a href> link discovery, SSR hydration payload extraction (__NUXT_DATA__, __NEXT_DATA__), and CMS API pagination (/api/posts).\n' +
+        '• Traditional HTML (html_links): Best for standard HTML websites, WordPress, Docusaurus, or wikis with standard <a href> navigation.\n' +
+        '• Nuxt 3 / Next.js SSR SPA (ssr_spa): Designed for modern SSR CMS sites (such as https://cms.demego.vn/) where sitemap.xml only lists the root URL and article slugs live inside hydration JSON or paginated APIs.\n' +
+        '• Sitemap Hybrid (sitemap_hybrid): Seeds from /sitemap.xml first and expands discovered article links on each page.',
+      webCrawlerExtractStrategy: 'Content Extraction Strategy',
+      webCrawlerExtractClean:
+        'Clean Article - Strip repeated Menu/Sidebar/Header/Footer (Recommended for RAG)',
+      webCrawlerExtractFull:
+        'Full Page - Keep all visible text blocks on the page',
+      webCrawlerExtractStrategyTip:
+        '• Clean Article (article_clean - Recommended): Focuses on main content containers (<article>, <main>, .post-content) and removes navigation/sidebar chrome (<nav>, <aside>, <footer>) so large menus are not duplicated across every RAG chunk.\n' +
+        '• Full Page (full_page): Retains all visible text on the page.',
+      webCrawlerMaxDepth: 'Max Crawl Depth',
+      webCrawlerMaxDepthTip:
+        'Maximum link hop depth from the Start URL (0 = Start URL only; 1 = Start URL + directly linked pages; 2..3 = deeper sub-categories).',
+      webCrawlerMaxPages: 'Max Pages Limit',
+      webCrawlerMaxPagesTip:
+        'Maximum number of pages to index per sync run (1 to 5000, default: 300).',
+      webCrawlerSameDomainOnly: 'Same Domain Only',
+      webCrawlerSameDomainOnlyTip:
+        'Only crawl pages hosted on the same domain as the Start URL.',
+      webCrawlerUrlFilter: 'Include URL Filter (Regex)',
+      webCrawlerUrlFilterTip:
+        'Optional regular expression. Only URLs matching this pattern will be indexed.',
+      webCrawlerExcludeUrlFilter: 'Exclude URL Filter (Regex)',
+      webCrawlerExcludeUrlFilterTip:
+        'Optional regular expression. URLs matching this pattern (e.g., /(login|register|admin|cart)) will be skipped.',
+      webCrawlerCrawlDelayMs: 'Crawl Delay Between Requests (ms)',
+      webCrawlerCrawlDelayMsTip:
+        'Politeness delay in milliseconds between consecutive HTTP requests (default: 100ms).',
       azure_devopsDescription:
         'Connect Azure DevOps to sync repository files and pull requests.',
       bitbucketDescription: 'Connect Bitbucket to sync PR content.',
@@ -1767,7 +1821,42 @@ Example: Virtual Hosted Style`,
       boxDescription: 'Connect your Box drive to sync files and folders.',
 
       githubDescription:
-        'Connect GitHub to sync pull requests and issues for retrieval.',
+        'Connect GitHub to sync repository folders, documentation files, pull requests, and issues for retrieval.',
+      dataSourceIncludeDocsAndCodeFiles:
+        'Include Repository Files (Docs / Code)',
+      dataSourceFieldBranch: 'Branch',
+      dataSourceFieldBranchTip:
+        'Target branch to sync files from (e.g., main). Leave empty to use the repository default branch.',
+      dataSourceOptionEntireRepository: 'Entire Repository',
+      dataSourceOptionSpecificFolder: 'Specific Folder',
+      dataSourceFieldFolderPath: 'Folder Path',
+      dataSourceFieldFolderPathTip:
+        'Relative folder path inside the repository to sync recursively (e.g., docs or docs/api). All files in this folder will automatically receive GitHub web_url metadata and be indexed when linked to a dataset.',
+      dataSourceGithubSyncScopeTip:
+        'Choose "Specific Folder" to sync only a designated folder (such as docs/) or "Entire Repository" to sync all supported documentation and source files across the repository.',
+      dataSourceGithubAtLeastOneSourceRequired:
+        'Enable at least one of Include Pull Requests, Include Issues, or Include Repository Files.',
+      githubWorkflowGuideButton: 'GitHub Actions CI/CD Guide',
+      githubWorkflowGuideModalTitle:
+        'GitHub Actions CI/CD → RAGFlow API Integration Guide',
+      githubWorkflowGuideModalSubtitle:
+        'Use this ready-to-run GitHub Actions workflow if you want every push on GitHub to immediately push updated files to RAGFlow REST API v1 and trigger parsing.',
+      githubWorkflowGuideStep1Title:
+        'Step 1: Configure Repository Secrets on GitHub',
+      githubWorkflowGuideStep1Desc:
+        'In your GitHub repository, navigate to Settings → Secrets and variables → Actions → New repository secret and add:',
+      githubWorkflowGuideSecretApiKeyDesc:
+        'Your RAGFlow API Key (create one under User Settings → API in RAGFlow).',
+      githubWorkflowGuideSecretDatasetIdDesc:
+        'The target Dataset ID (found in the URL /dataset/files/<dataset_id>).',
+      githubWorkflowGuideStep2Title:
+        'Step 2: Add Workflow File (.github/workflows/sync-ragflow.yml)',
+      githubWorkflowGuideStep2Desc:
+        'The workflow below is pre-filled with your current configuration and performs an idempotent sync (deletes outdated document records with the same name, uploads the latest file, and triggers chunk parsing):',
+      githubWorkflowGuideCopyButton: 'Copy Workflow YAML',
+      githubWorkflowGuideCopied: 'Copied to clipboard!',
+      githubWorkflowGuideNativeSyncNote:
+        'Tip: You can also enable "Include Repository Files (Docs / Code)" directly on this GitHub Data Source form and link it to your Dataset with Auto-Parse enabled — RAGFlow will pull and index your folder automatically without requiring CI/CD.',
       airtableDescription:
         'Connect to Airtable and synchronize files from a specified table within a designated workspace.',
       dingtalkAITableDescription:
@@ -2023,6 +2112,8 @@ Example: Virtual Hosted Style`,
         'Data source connection validation failed. Please check your configuration and logs.',
       availableSourcesDescription: 'Select a data source to add',
       availableSources: 'Available sources',
+      searchDataSource: 'Search data sources...',
+      noDataSourceFound: 'No matching data sources found',
       datasourceDescription: 'Manage your data source and connections',
       chatChannels: 'Chat channels',
       chatChannelsDescription: 'Manage your chat channel bots and credentials',
@@ -3867,6 +3958,38 @@ Important structured information may include: names, dates, locations, events, k
       conversationDetail: 'Conversation detail',
       user: 'User',
       assistant: 'Assistant',
+      createByAI: 'Create with AI (AI Brain)',
+      createByAITitle:
+        'AI Brain Architect — Generate Agent & Pipeline from Prompt',
+      createByAIDescription:
+        'Describe your business workflow or document ingestion needs in natural language. AI Brain will select the optimal RAGFlow Action Nodes, configure prompts & parameters, and lay out a ready-to-run canvas.',
+      aiPromptLabel:
+        'Describe the agent workflow or ingestion pipeline you want to build',
+      aiPromptPlaceholder:
+        'E.g., Build a customer support agent that classifies incoming questions into Technical Support vs Billing Complaints. For technical questions, retrieve from our knowledge base and answer; for complaints, send an alert email...',
+      aiPromptRequired:
+        'Please describe your requirement (at least 10 characters)',
+      aiCategoryLabel: 'Target Flow Category',
+      aiCategoryAuto: 'Auto-detect (Recommended)',
+      aiCategoryAgent:
+        'Agent Workflow (Conversational / Multi-tool / Automation)',
+      aiCategoryDataflow: 'Ingestion Pipeline (Parse, Chunk & Enrich Datasets)',
+      aiQuickPromptsLabel: 'Quick Scenario Templates (Click to fill)',
+      aiGeneratePreviewBtn: 'Analyze & Preview Architecture',
+      aiDirectCreateBtn: 'Create & Open Now (1-Click)',
+      aiGeneratingText:
+        'AI Brain is designing node topology & DSL configuration...',
+      aiCreatingText: 'Creating and opening canvas...',
+      aiPreviewSectionTitle: 'Architecture Proposed by AI Brain',
+      aiPreviewNodesCount: '{{count}} Action Nodes auto-configured',
+      aiFallbackNotice:
+        'Generated using the deterministic Rule-based Smart Synthesizer because no active LLM was available or the model timed out.',
+      aiConfirmCreateBtn: 'Create & Open in Canvas',
+      aiReGenerateBtn: 'Re-analyze',
+      aiModelOptionalHint:
+        'Optional: Select a preferred LLM for reasoning nodes (leave blank to use your tenant default chat model).',
+      aiDatasetOptionalHint:
+        'Optional: Pre-bind Knowledge Datasets if your workflow retrieves internal documents.',
     },
     llmTools: {
       bad_calculator: {

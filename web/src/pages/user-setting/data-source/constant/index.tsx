@@ -18,7 +18,7 @@ import { FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { TFunction } from 'i18next';
-import { BookOpen, Globe, Mail, Rss, Search } from 'lucide-react';
+import { BookOpen, Globe, Mail, Radar, Rss, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
@@ -36,6 +36,7 @@ import { jiraConstant } from './jira-constant';
 import { S3Constant } from './s3-constant';
 import { seafileConstant } from './seafile-constant';
 import { sitemapConstant } from './sitemap-constant';
+import { webCrawlerConstant } from './web-crawler-constant';
 
 export enum DataSourceKey {
   CONFLUENCE = 'confluence',
@@ -71,6 +72,7 @@ export enum DataSourceKey {
   REST_API = 'rest_api',
   RSS = 'rss',
   SITEMAP = 'sitemap',
+  WEB_CRAWLER = 'web_crawler',
   ONEDRIVE = 'onedrive',
   OUTLOOK = 'outlook',
   SALESFORCE = 'salesforce',
@@ -167,6 +169,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.SITEMAP]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.WEB_CRAWLER]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.MOODLE]: {
     syncDeletedFiles: true,
   },
@@ -224,6 +229,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Sitemap',
       description: t(`setting.${DataSourceKey.SITEMAP}Description`),
       icon: <Globe className="text-text-primary" size={22} />,
+    },
+    [DataSourceKey.WEB_CRAWLER]: {
+      name: 'Web Crawler (Spider)',
+      description: t('setting.webCrawlerDescription'),
+      icon: <Radar className="text-text-primary" size={22} />,
     },
     [DataSourceKey.GOOGLE_CLOUD_STORAGE]: {
       name: 'Google Cloud Storage',
@@ -814,6 +824,7 @@ const generateDataSourceFormFields = (t: TFunction) => ({
     },
   ],
   [DataSourceKey.SITEMAP]: sitemapConstant(t),
+  [DataSourceKey.WEB_CRAWLER]: webCrawlerConstant(t),
   [DataSourceKey.GOOGLE_CLOUD_STORAGE]: [
     {
       label: t('setting.dataSourceFieldGcsAccessKeyId'),
@@ -1423,6 +1434,78 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       type: FormFieldType.Checkbox,
       required: false,
       defaultValue: true,
+    },
+    {
+      label: t('setting.dataSourceIncludeDocsAndCodeFiles'),
+      name: 'config.include_code_files',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: false,
+      customValidate: (val: boolean, formValues: any) => {
+        const pr = !!formValues?.config?.include_pull_requests;
+        const issues = !!formValues?.config?.include_issues;
+        if (!pr && !issues && !val) {
+          return t('setting.dataSourceGithubAtLeastOneSourceRequired');
+        }
+        return true;
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldBranch'),
+      name: 'config.branch',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'main',
+      tooltip: t('setting.dataSourceFieldBranchTip'),
+      shouldRender: (formValues: any) =>
+        !!formValues?.config?.include_code_files,
+    },
+    {
+      label: t('setting.dataSourceFieldSyncScope'),
+      name: 'config.sync_scope',
+      type: FormFieldType.Select,
+      required: false,
+      defaultValue: 'repository',
+      tooltip: t('setting.dataSourceGithubSyncScopeTip'),
+      options: [
+        {
+          label: t('setting.dataSourceOptionEntireRepository'),
+          value: 'repository',
+        },
+        {
+          label: t('setting.dataSourceOptionSpecificFolder'),
+          value: 'directory',
+        },
+      ],
+      shouldRender: (formValues: any) =>
+        !!formValues?.config?.include_code_files,
+    },
+    {
+      label: t('setting.dataSourceFieldFolderPath'),
+      name: 'config.folder_path',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'docs',
+      tooltip: t('setting.dataSourceFieldFolderPathTip'),
+      shouldRender: (formValues: any) =>
+        !!formValues?.config?.include_code_files &&
+        formValues?.config?.sync_scope === 'directory',
+      customValidate: (val: string, formValues: any) => {
+        const enabled = !!formValues?.config?.include_code_files;
+        const scope = formValues?.config?.sync_scope;
+        if (enabled && scope === 'directory') {
+          const trimmed = (val || '').trim().replace(/^\/+|\/+$/g, '');
+          if (!trimmed) {
+            return t('setting.dataSourceValidationFieldRequired', {
+              label: t('setting.dataSourceFieldFolderPath'),
+            });
+          }
+          if (trimmed.split('/').some((seg) => seg === '.' || seg === '..')) {
+            return "Folder path must not contain '.' or '..'";
+          }
+        }
+        return true;
+      },
     },
   ],
   [DataSourceKey.IMAP]: [
@@ -2248,6 +2331,25 @@ export const DataSourceFormDefaultValues = {
       batch_size: 10,
     },
   },
+  [DataSourceKey.WEB_CRAWLER]: {
+    name: '',
+    source: DataSourceKey.WEB_CRAWLER,
+    config: {
+      start_url: '',
+      crawl_mode: 'auto',
+      extract_strategy: 'article_clean',
+      max_depth: 2,
+      max_pages: 300,
+      same_domain_only: true,
+      url_filter: '',
+      exclude_url_filter: '',
+      follow_pdf_links: false,
+      restrict_pdf_to_domain: true,
+      crawl_delay_ms: 100,
+      user_agent: '',
+      batch_size: 10,
+    },
+  },
   [DataSourceKey.S3]: {
     name: '',
     source: DataSourceKey.S3,
@@ -2541,6 +2643,10 @@ export const DataSourceFormDefaultValues = {
       repository_name: '',
       include_pull_requests: true,
       include_issues: true,
+      include_code_files: false,
+      branch: 'main',
+      sync_scope: 'repository',
+      folder_path: '',
       credentials: {
         github_access_token: '',
       },

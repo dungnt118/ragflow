@@ -28,6 +28,8 @@ import {
   IBuiltinPipelineListResponse,
   IFlow,
   IFlowTemplate,
+  IGenerateAgentByAIRequest,
+  IGenerateAgentByAIResponse,
   IPipeLineListRequest,
   ITraceData,
   IWebhookTrace,
@@ -101,6 +103,7 @@ export const enum AgentApiAction {
   FetchPipelineNodes = 'fetchPipelineNodes',
   FetchBuiltinPipelineList = 'fetchBuiltinPipelineList',
   FetchBuiltinPipelineDetail = 'fetchBuiltinPipelineDetail',
+  GenerateAgentByAI = 'generateAgentByAI',
 }
 
 export const AgentKeys = {
@@ -1312,4 +1315,36 @@ export const useFetchPipelineDslByPipelineId = (
   });
 
   return { dsl, loading };
+};
+
+export const useGenerateAgentByAI = () => {
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation<
+    { code: number; data: IGenerateAgentByAIResponse; message?: string },
+    unknown,
+    IGenerateAgentByAIRequest
+  >({
+    mutationKey: [AgentApiAction.GenerateAgentByAI],
+    mutationFn: async (params: IGenerateAgentByAIRequest) => {
+      const { data = {} } = await agentService.generateAgentByAI(params);
+      if (data.code === 0 && params.auto_create && data.data?.agent?.id) {
+        message.success(i18n.t('message.created'));
+        queryClient.invalidateQueries({
+          queryKey: AgentKeys.list(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: AgentKeys.filters(),
+        });
+      } else if (data.code !== 0 && data.message) {
+        message.error(data.message);
+      }
+      return data;
+    },
+  });
+
+  return { data, loading, generateAgentByAI: mutateAsync };
 };

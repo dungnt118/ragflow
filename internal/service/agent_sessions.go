@@ -752,3 +752,207 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 	}
 	return row, common.CodeSuccess, nil
 }
+
+// UpdateAgentSessionFeedback updates the feedback rating on an assistant message in an agent session.
+func (s *AgentService) UpdateAgentSessionFeedback(
+	ctx context.Context, userID, agentID, sessionID, msgID string, req map[string]interface{},
+) (map[string]interface{}, common.ErrorCode, error) {
+	if agentID == "" {
+		return nil, common.CodeArgumentError, errors.New("agent_id is required")
+	}
+	if sessionID == "" {
+		return nil, common.CodeArgumentError, errors.New("session_id is required")
+	}
+	if msgID == "" {
+		return nil, common.CodeArgumentError, errors.New("msg_id is required")
+	}
+
+	ok, err := s.CheckCanvasAccess(ctx, userID, agentID)
+	if err != nil {
+		if errors.Is(err, dao.ErrUserCanvasNotFound) {
+			return nil, common.CodeOperatingError, errors.New("agent not found or no permission")
+		}
+		return nil, common.CodeServerError, fmt.Errorf("failed to check agent permission: %w", err)
+	}
+	if !ok {
+		return nil, common.CodeOperatingError, errors.New("agent not found or no permission")
+	}
+
+	cv, err := s.canvasDAO.GetByID(ctx, dao.DB, agentID)
+	if err != nil {
+		if errors.Is(err, dao.ErrUserCanvasNotFound) {
+			return nil, common.CodeOperatingError, errors.New("agent not found or no permission")
+		}
+		return nil, common.CodeServerError, fmt.Errorf("failed to load agent canvas: %w", err)
+	}
+
+	conv, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, agentID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to fetch session: %w", err)
+	}
+	if conv == nil || conv.DialogID != agentID {
+		return nil, common.CodeNotFound, errors.New("agent session not found")
+	}
+
+	var feedbackCfg *entity.FeedbackConfig
+	if cv != nil {
+		feedbackCfg = entity.ExtractFeedbackConfig(map[string]any(cv.DSL))
+	}
+	tenantID := userID
+	if cv != nil {
+		tenantID = cv.EffectiveTenantID()
+	}
+
+	return updateAPI4ConversationFeedback(
+		ctx,
+		s.api4ConversationDAO,
+		conv,
+		tenantID,
+		"agent",
+		agentID,
+		msgID,
+		req,
+		feedbackCfg,
+		"web",
+		userID,
+		s,
+	)
+}
+
+func updateAPI4ConversationFeedback(
+	ctx context.Context,
+	api4DAO *dao.API4ConversationDAO,
+	conv *entity.API4Conversation,
+	tenantID string,
+	sourceType string,
+	sourceID string,
+	msgID string,
+	req map[string]interface{},
+	feedbackCfg *entity.FeedbackConfig,
+	defaultChannel string,
+	raterID string,
+	agentRunner FeedbackWebhookAgentRunner,
+) (map[string]interface{}, common.ErrorCode, error) {
+	parsed, parseErr := ParseFeedbackRequest(req, feedbackCfg, defaultChannel, raterID)
+	if parseErr != nil {
+		return nil, common.CodeDataError, parseErr
+	}
+	thumbup := parsed.ThumbUp
+
+	messages := parseAgentSessionMessages(conv.Message)
+	references := parseAgentSessionReferences(conv.Reference)
+
+	messageIndex := -1
+	var priorThumb interface{}
+	shouldApplyChunk := false
+	for i, msg := range messages {
+		if msgID != stringValue(msg["id"]) || stringValue(msg["role"]) == "user" {
+			continue
+		}
+		priorThumb = msg["thumbup"]
+		priorThumbBool, priorThumbIsBool := priorThumb.(bool)
+		if thumbup {
+			msg["thumbup"] = true
+			if parsed.Comment != "" {
+				msg["feedback"] = parsed.Comment
+			} else {
+				delete(msg, "feedback")
+			}
+			shouldApplyChunk = !priorThumbIsBool || !priorThumbBool
+		} else {
+			msg["thumbup"] = false
+			if parsed.Comment != "" {
+				msg["feedback"] = parsed.Comment
+			} else if feedback, exists := req["feedback"]; exists && isTruthy(feedback) {
+				msg["feedback"] = feedback
+			}
+			shouldApplyChunk = !priorThumbIsBool || priorThumbBool
+		}
+		if parsed.Detail != nil {
+			if rawDetail, mErr := json.Marshal(parsed.Detail); mErr == nil {
+				var detailMap map[string]interface{}
+				if json.Unmarshal(rawDetail, &detailMap) == nil {
+					msg["feedback_detail"] = detailMap
+				}
+			}
+		}
+		messages[i] = msg
+		messageIndex = i
+		break
+	}
+	if messageIndex == -1 {
+		return nil, common.CodeDataError, errors.New("message not found")
+	}
+
+	var feedbackReference map[string]interface{}
+	refIndex := sessionMessageReferenceIndex(messages, messageIndex)
+	if refIndex >= 0 && refIndex < len(references) {
+		if len(references[refIndex]) > 0 {
+			feedbackReference = references[refIndex]
+		}
+	}
+
+	messageRaw, err := json.Marshal(messages)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	feedbackUpdate := map[string]interface{}{"thumb_up": thumbup}
+	if thumbup && parsed.Comment == "" {
+		feedbackUpdate["feedback"] = nil
+	} else if messages[messageIndex]["feedback"] != nil {
+		feedbackUpdate["feedback"] = messages[messageIndex]["feedback"]
+	}
+
+	var shouldFireTrigger bool
+	var thumbDelta int
+	if api4DAO != nil && dao.DB != nil {
+		if err := api4DAO.UpdateHistory(ctx, dao.DB, conv.ID, conv.DialogID, conv.UserID, nil, dao.ConversationHistoryUpdate{
+			FeedbackMessageID: msgID,
+			Feedback:          feedbackUpdate,
+			FeedbackDetail:    parsed.Detail,
+			ShouldFireTrigger: &shouldFireTrigger,
+			ThumbUpDelta:      &thumbDelta,
+		}); err != nil {
+			return nil, common.CodeServerError, err
+		}
+	}
+	conv.Message = messageRaw
+	if thumbDelta != 0 {
+		nextThumbUp := conv.ThumbUp + thumbDelta
+		if nextThumbUp < 0 {
+			nextThumbUp = 0
+		}
+		conv.ThumbUp = nextThumbUp
+	}
+
+	if shouldApplyChunk && feedbackReference != nil && tenantID != "" {
+		chatSessionSvc := NewChatSessionService()
+		if priorThumbBool, ok := priorThumb.(bool); ok && priorThumbBool != thumbup {
+			_, _ = chatSessionSvc.applyChunkFeedback(ctx, tenantID, feedbackReference, !priorThumbBool)
+		}
+		_, _ = chatSessionSvc.applyChunkFeedback(ctx, tenantID, feedbackReference, thumbup)
+	}
+
+	if feedbackCfg != nil && feedbackCfg.TriggerConfig != nil && feedbackCfg.TriggerConfig.Enabled && parsed.Detail != nil {
+		negCount := countNegativeMessages(messages)
+		if shouldFireTrigger && ShouldTriggerFeedback(feedbackCfg.TriggerConfig, *parsed.Detail, negCount) {
+			q, a := extractTurnQuestionAnswer(messages, messageIndex)
+			DispatchFeedbackTriggerAsync(feedbackCfg.TriggerConfig, FeedbackTriggerEvent{
+				Event:       "feedback.triggered",
+				TenantID:    tenantID,
+				OwnerUserID: conv.UserID,
+				SourceType:  sourceType,
+				SourceID:    sourceID,
+				SessionID:   conv.ID,
+				MessageID:   msgID,
+				Question:    q,
+				Answer:      a,
+				Reference:   feedbackReference,
+				Feedback:    *parsed.Detail,
+			}, agentRunner)
+		}
+	}
+
+	return normalizeAgentSession(conv, false), common.CodeSuccess, nil
+}

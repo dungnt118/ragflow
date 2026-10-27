@@ -19,23 +19,59 @@ package core
 import "context"
 
 type IncomingMessage struct {
-	Channel   string
-	AccountID string
-	ChatID    string
-	ChatType  string
-	MessageID string
-	SenderID  string
-	Text      string
-	Raw       map[string]any
+	Channel          string
+	AccountID        string
+	ChatID           string
+	ChatType         string
+	ChatTitle        string
+	MessageID        string
+	ThreadID         string
+	SenderID         string
+	SenderName       string
+	SenderUsername   string
+	ReplyToMessageID string
+	ReplyToSender    string
+	ReplyToText      string
+	ReplyToIsBot     bool
+	QuoteText        string
+	Text             string
+	Raw              map[string]any
+}
+
+type InlineButton struct {
+	Text         string `json:"text"`
+	CallbackData string `json:"callback_data"`
 }
 
 type OutgoingMessage struct {
 	ChatID           string
 	Text             string
 	ReplyToMessageID string
+	InlineButtons    [][]InlineButton
+}
+
+type CallbackQuery struct {
+	ID        string
+	Channel   string
+	AccountID string
+	ChatID    string
+	MessageID string
+	SenderID  string
+	Data      string
+}
+
+type CallbackResult struct {
+	ToastText     string
+	InlineButtons [][]InlineButton
 }
 
 type MessageHandler func(ctx context.Context, msg IncomingMessage) error
+
+type CallbackHandler func(ctx context.Context, cb CallbackQuery) (*CallbackResult, error)
+
+type CallbackCapableChannel interface {
+	SetCallbackHandler(CallbackHandler)
+}
 
 type Channel interface {
 	ChannelID() string                                   // ChannelID return channel's name

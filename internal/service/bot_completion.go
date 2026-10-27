@@ -63,6 +63,7 @@ type ChatbotSSEFrame struct {
 	Data      string         `json:"-"`
 	Reference map[string]any `json:"-"`
 	SessionID string         `json:"-"`
+	MessageID string         `json:"-"`
 	Done      bool           `json:"-"`
 	Err       error          `json:"-"`
 	// Final marks the last answer frame of a turn. It is
@@ -102,11 +103,15 @@ func WriteChatbotFrame(w http.ResponseWriter, f ChatbotSSEFrame) error {
 			},
 		}
 	} else {
+		var frameMsgID any
+		if f.MessageID != "" {
+			frameMsgID = f.MessageID
+		}
 		data := map[string]any{
 			"answer":       f.Data,
 			"reference":    f.Reference,
 			"audio_binary": nil,
-			"id":           nil,
+			"id":           frameMsgID,
 			"session_id":   f.SessionID,
 		}
 		if f.Final {
@@ -519,6 +524,7 @@ func (s *BotService) streamChatbotTurn(
 					Data:      finalData,
 					Reference: referenceOrEmpty(finalRef),
 					SessionID: session.ID,
+					MessageID: messageID,
 					Final:     true,
 				}
 				continue
@@ -535,6 +541,7 @@ func (s *BotService) streamChatbotTurn(
 					Data:         "",
 					Reference:    map[string]any{},
 					SessionID:    session.ID,
+					MessageID:    messageID,
 					StartToThink: res.StartToThink,
 					EndToThink:   res.EndToThink,
 				}
@@ -572,6 +579,7 @@ func (s *BotService) streamChatbotTurn(
 				Data:      delta,
 				Reference: map[string]any{},
 				SessionID: session.ID,
+				MessageID: messageID,
 			}
 		}
 

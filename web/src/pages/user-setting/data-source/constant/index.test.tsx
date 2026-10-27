@@ -16,6 +16,7 @@
 
 import type { TFunction } from 'i18next';
 import { FormFieldType } from '@/components/dynamic-form';
+import { buildGithubActionsWorkflowYaml } from './github-workflow-template';
 import {
   DataSourceFormDefaultValues,
   DataSourceKey,
@@ -117,6 +118,71 @@ describe('Sitemap data source', () => {
       restrict?.shouldRender?.({ config: { follow_pdf_links: true } }),
     ).toBe(true);
     expect(batchSize?.validation?.min).toBe(1);
+  });
+});
+
+describe('Web Crawler data source', () => {
+  it('registers its catalog entry and defaults', () => {
+    const info = generateDataSourceInfo(translate)[DataSourceKey.WEB_CRAWLER];
+    const defaults = DataSourceFormDefaultValues[DataSourceKey.WEB_CRAWLER];
+
+    expect(info.name).toBe('Web Crawler (Spider)');
+    expect(info.description).toBe('setting.webCrawlerDescription');
+    expect(defaults).toEqual({
+      name: '',
+      source: 'web_crawler',
+      config: {
+        start_url: '',
+        crawl_mode: 'auto',
+        extract_strategy: 'article_clean',
+        max_depth: 2,
+        max_pages: 300,
+        same_domain_only: true,
+        url_filter: '',
+        exclude_url_filter: '',
+        follow_pdf_links: false,
+        restrict_pdf_to_domain: true,
+        crawl_delay_ms: 100,
+        user_agent: '',
+        batch_size: 10,
+      },
+    });
+  });
+
+  it('exposes crawl mode and extraction strategy selectors with bounded depth and pages', () => {
+    const fields = getDataSourceFieldsWithExtras(
+      translate,
+      DataSourceKey.WEB_CRAWLER,
+    ) as Array<{
+      name: string;
+      type?: FormFieldType;
+      required?: boolean;
+      options?: Array<{ label: string; value: string }>;
+      validation?: { min?: number; max?: number };
+    }>;
+    const startUrl = fields.find((f) => f.name === 'config.start_url');
+    const crawlMode = fields.find((f) => f.name === 'config.crawl_mode');
+    const extractStrategy = fields.find(
+      (f) => f.name === 'config.extract_strategy',
+    );
+    const maxDepth = fields.find((f) => f.name === 'config.max_depth');
+    const maxPages = fields.find((f) => f.name === 'config.max_pages');
+
+    expect(startUrl?.required).toBe(true);
+    expect(crawlMode?.type).toBe(FormFieldType.Select);
+    expect(crawlMode?.options?.map((o) => o.value)).toEqual([
+      'auto',
+      'html_links',
+      'ssr_spa',
+      'sitemap_hybrid',
+    ]);
+    expect(extractStrategy?.type).toBe(FormFieldType.Select);
+    expect(extractStrategy?.options?.map((o) => o.value)).toEqual([
+      'article_clean',
+      'full_page',
+    ]);
+    expect(maxDepth?.validation).toMatchObject({ min: 0, max: 10 });
+    expect(maxPages?.validation).toMatchObject({ min: 1, max: 5000 });
   });
 });
 
@@ -312,5 +378,78 @@ describe.each([
     expect(DataSourceFormDefaultValues[key].config).toMatchObject({
       batch_size: 32,
     });
+  });
+});
+
+describe('GitHub data source folder sync & CI/CD workflow guide', () => {
+  it('exposes unique fields for include_code_files, branch, sync_scope, and folder_path with conditional rendering', () => {
+    const fields = getDataSourceFieldsWithExtras(
+      translate,
+      DataSourceKey.GITHUB,
+    ) as Array<{
+      name: string;
+      shouldRender?: (values: any) => boolean;
+      customValidate?: (val: any, values: any) => boolean | string;
+    }>;
+
+    const fieldNames = fields.map((f) => f.name);
+    expect(new Set(fieldNames).size).toBe(fieldNames.length);
+
+    const includeCodeFiles = fields.find(
+      (f) => f.name === 'config.include_code_files',
+    );
+    const branch = fields.find((f) => f.name === 'config.branch');
+    const syncScope = fields.find((f) => f.name === 'config.sync_scope');
+    const folderPath = fields.find((f) => f.name === 'config.folder_path');
+
+    expect(includeCodeFiles).toBeDefined();
+    expect(branch?.shouldRender?.({ config: { include_code_files: false } })).toBe(
+      false,
+    );
+    expect(branch?.shouldRender?.({ config: { include_code_files: true } })).toBe(
+      true,
+    );
+    expect(
+      syncScope?.shouldRender?.({ config: { include_code_files: true } }),
+    ).toBe(true);
+    expect(
+      folderPath?.shouldRender?.({
+        config: { include_code_files: true, sync_scope: 'repository' },
+      }),
+    ).toBe(false);
+    expect(
+      folderPath?.shouldRender?.({
+        config: { include_code_files: true, sync_scope: 'directory' },
+      }),
+    ).toBe(true);
+
+    // Folder path required when sync_scope === 'directory'
+    expect(
+      folderPath?.customValidate?.('', {
+        config: { include_code_files: true, sync_scope: 'directory' },
+      }),
+    ).toBe('setting.dataSourceValidationFieldRequired');
+    expect(
+      folderPath?.customValidate?.('docs', {
+        config: { include_code_files: true, sync_scope: 'directory' },
+      }),
+    ).toBe(true);
+  });
+
+  it('builds an idempotent GitHub Actions workflow YAML pre-filled with repo, branch, folder_path, and baseUrl', () => {
+    const yaml = buildGithubActionsWorkflowYaml({
+      repositoryOwner: 'hung2604',
+      repositoryName: 'BA-Demego',
+      branch: 'main',
+      folderPath: '/docs/',
+      baseUrl: 'https://faq.demego.vn/',
+    });
+
+    expect(yaml).toContain('Sync Docs to RAGFlow Dataset (hung2604/BA-Demego)');
+    expect(yaml).toContain('- main');
+    expect(yaml).toContain("- 'docs/**'");
+    expect(yaml).toContain("RAGFLOW_BASE_URL: 'https://faq.demego.vn'");
+    expect(yaml).toContain('/api/v1/datasets/${RAGFLOW_DATASET_ID}/documents');
+    expect(yaml).toContain('/api/v1/datasets/${RAGFLOW_DATASET_ID}/chunks');
   });
 });

@@ -2,11 +2,13 @@
     "id": 14,
     "title": {
         "en": "Trip planner",
+        "vi": "Trợ lý Lập Lịch trình Công tác & Du lịch",
         "de": "Reiseplaner",
         "zh": "旅行规划师"
     },
     "description": {
         "en": "This smart trip planner utilizes LLM technology to automatically generate customized travel itineraries, with optional tool integration for enhanced reliability.",
+        "vi": "Ứng dụng phối hợp nhiều Agent chuyên trách (Điểm đến, Lưu trú, Ẩm thực, Ngân sách) kết hợp công cụ tìm kiếm để tự động thiết kế lịch trình công tác hoặc du lịch chi tiết theo ngày. Tình huống sử dụng: Lập kế hoạch chuyến công tác doanh nghiệp, thiết kế tour du lịch cá nhân hóa.",
         "de": "Dieser intelligente Reiseplaner nutzt LLM-Technologie zur automatischen Generierung maßgeschneiderter Reiserouten mit optionaler Tool-Integration für erhöhte Zuverlässigkeit.",
         "zh": "智能旅行规划师将利用大模型自动生成定制化的旅行行程，附带可选工具集成，以增强可靠性。"
     },

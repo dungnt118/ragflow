@@ -38,7 +38,7 @@ var registry = map[string]Factory{
 	"arxiv":                      buildArxivTool,
 	"bgpt":                       buildBGPTTool,
 	"code_exec":                  noConfig("code_exec", func() einotool.BaseTool { return NewCodeExecTool() }),
-	"crawler":                    noConfig("crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
+	"crawler":                    buildCrawlerTool,
 	"dataset_navigation_by_tree": noConfig("dataset_navigation_by_tree", func() einotool.BaseTool { return NewDatasetNavigationByTree() }),
 	"hybrid_search":              noConfig("hybrid_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolHybridSearch) }),
 	"vector_search":              noConfig("vector_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolVectorSearch) }),
@@ -71,7 +71,7 @@ var registry = map[string]Factory{
 	"tavily_extract":             buildTavilyExtractTool,
 	"tushare":                    noConfig("tushare", func() einotool.BaseTool { return NewTushareTool() }),
 	"wencai":                     buildWencaiTool,
-	"web_crawler":                noConfig("web_crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
+	"web_crawler":                buildCrawlerTool,
 	"wikipedia":                  buildWikipediaTool,
 	"wikipedia_search":           buildWikipediaTool,
 	"yahoo_finance":              buildYahooFinanceTool,
@@ -229,6 +229,28 @@ func buildBGPTTool(params map[string]any) (einotool.BaseTool, error) {
 		defaults.DaysBack = daysBack
 	}
 	return newBGPTTool(nil, defaults), nil
+}
+
+func buildCrawlerTool(params map[string]any) (einotool.BaseTool, error) {
+	cfg := CrawlerConfig{}
+	if v, ok := stringParam(params, "query"); ok {
+		cfg.Query = v
+	} else if v, ok := stringParam(params, "url"); ok {
+		cfg.Query = v
+	}
+	if v, ok := stringParam(params, "extract_type"); ok {
+		cfg.ExtractType = v
+	}
+	if v, ok := stringParam(params, "proxy"); ok {
+		cfg.Proxy = v
+	}
+	if v, ok := intParam(params, "max_depth"); ok {
+		cfg.MaxDepth = v
+	}
+	if v, ok := intParam(params, "max_pages"); ok {
+		cfg.MaxPages = v
+	}
+	return NewCrawlerToolWithConfig(nil, cfg), nil
 }
 
 func buildExeSQLTool(params map[string]any) (einotool.BaseTool, error) {

@@ -2,11 +2,13 @@
     "id": "41",
     "title": {
         "en": "CAJAL scientific paper agent",
+        "vi": "Trợ lý Soạn thảo Bài báo Khoa học CAJAL",
         "de": "CAJAL-Agent für wissenschaftliche Arbeiten",
         "zh": "CAJAL 科学论文助手"
     },
     "description": {
         "en": "A local-first scientific paper generation agent for RAGFlow. It is preconfigured for Agnuxo/CAJAL-4B-P2PCLAW through Ollama, retrieves knowledge-base evidence, and drafts citation-grounded LaTeX-ready academic sections.",
+        "vi": "Tác tử hỗ trợ nghiên cứu và soạn thảo bài báo khoa học: tự động truy xuất bằng chứng thực nghiệm từ kho tri thức (Dataset) và biên soạn các chương mục học thuật chuẩn LaTeX kèm trích dẫn nguồn xác thực. Tình huống sử dụng: Viết tổng quan tài liệu (Literature Review), soạn bản thảo công bố khoa học, báo cáo R&D.",
         "de": "Ein lokal ausgerichteter Agent zur Erstellung wissenschaftlicher Arbeiten in RAGFlow. Er ist für Agnuxo/CAJAL-4B-P2PCLAW über Ollama vorkonfiguriert, ruft Evidenz aus der Wissensdatenbank ab und erstellt zitationsgestützte, LaTeX-fähige akademische Abschnitte.",
         "zh": "面向 RAGFlow 的本地优先科学论文生成助手。该模板预配置 Agnuxo/CAJAL-4B-P2PCLAW（Ollama），可检索知识库证据，并生成带引用依据、适合 LaTeX 的学术章节。"
     },

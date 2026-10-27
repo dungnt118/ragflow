@@ -2,11 +2,13 @@
     "id": 29,
     "title": {
         "en": "Book",
+        "vi": "Sách & Bản thảo dài (Book)",
         "de": "Buch",
         "zh": "书籍"
     },
     "description": {
-        "en": "This template segments parsed files by book structure. Best for books, long-form manuscripts, literary works, and other documents with defined chapters and sections.",
+        "en": "This template segments parsed files by hierarchical book structure (Part, Chapter, Section). Use cases: Textbooks, training curricula, long-form manuscripts, literary works, encyclopedias, and multi-hundred-page tender or project dossiers.",
+        "vi": "Phân đoạn theo cấu trúc phân cấp của sách (Phần - Chương - Mục - Tiểu mục), tự động loại bỏ mục lục thừa và giữ mạch logic giữa các chương dài. Tình huống sử dụng: Sách chuyên khảo, giáo trình đào tạo nội bộ, bản thảo dài, tác phẩm văn học hoặc hồ sơ dự án/hồ sơ thầu hàng trăm trang.",
         "de": "Diese Vorlage segmentiert die geparste Datei anhand der Struktur eines Buches. Sie eignet sich für Dokumente mit klar definierten Kapiteln und Abschnitten, wie Bücher, längere Manuskripte, literarische Werke und andere kapitelbasierte Texte.",
         "zh": "此模板将解析后的文件按书籍结构进行切片，适用于具有清晰章节层级的文档类型，如书籍、长篇手稿、文学作品及其他按章节组织的文本。"
     },

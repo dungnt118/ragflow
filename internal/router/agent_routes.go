@@ -47,6 +47,7 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 	// Agent CRUD.
 	g.GET("", h.ListAgents)
 	g.POST("", h.CreateAgent)
+	g.POST("/generate-by-ai", h.GenerateAgentByAI)
 	g.GET("/:canvas_id", h.GetAgent)
 	g.PUT("/:canvas_id", h.UpdateAgent)
 	g.DELETE("/:canvas_id", h.DeleteAgent)
@@ -71,10 +72,12 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 
 	// Sessions.
 	g.GET("/:canvas_id/sessions", h.ListAgentSessions)
+	g.GET("/:canvas_id/feedback-sessions", h.ListAgentFeedbackSessions)
 	g.POST("/:canvas_id/sessions", h.CreateAgentSession)
 	g.GET("/:canvas_id/sessions/:session_id", h.GetAgentSession)
 	g.DELETE("/:canvas_id/sessions", h.DeleteAgentSession)
 	g.DELETE("/:canvas_id/sessions/:session_id", h.DeleteAgentSession)
+	g.PUT("/:canvas_id/sessions/:session_id/messages/:msg_id/feedback", h.UpdateAgentSessionFeedback)
 
 	// Logs and webhook.
 	g.GET("/:canvas_id/logs/:message_id", h.GetAgentLogs)

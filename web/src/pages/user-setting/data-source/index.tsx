@@ -14,9 +14,11 @@
  *  limitations under the License.
  */
 
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
+import { SearchInput } from '@/components/ui/input';
 import { Plus } from 'lucide-react';
 import { ProfileSettingWrapperCard } from '../components/user-setting-header';
 import AddDataSourceModal from './add-datasource-modal';
@@ -77,14 +79,37 @@ const AvailableSourceCard = ({
 const DataSource = () => {
   const { t } = useTranslation();
   const { dataSourceInfo } = useDataSourceInfo();
-  const dataSourceTemplates = getAvailableDataSourceKeys().map((id) => {
-    return {
-      id,
-      name: dataSourceInfo[id].name,
-      description: dataSourceInfo[id].description,
-      icon: dataSourceInfo[id].icon,
-    };
-  });
+  const [searchString, setSearchString] = useState('');
+
+  const dataSourceTemplates = useMemo(() => {
+    return getAvailableDataSourceKeys().map((id) => {
+      return {
+        id,
+        name: dataSourceInfo[id]?.name || id,
+        description: dataSourceInfo[id]?.description || '',
+        icon: dataSourceInfo[id]?.icon,
+      };
+    });
+  }, [dataSourceInfo]);
+
+  const filteredDataSourceTemplates = useMemo(() => {
+    const query = searchString.trim().toLowerCase();
+    if (!query) {
+      return dataSourceTemplates;
+    }
+    return dataSourceTemplates.filter((item) => {
+      const name = (item.name || '').toLowerCase();
+      const desc = (item.description || '').toLowerCase();
+      const id = (item.id || '').toLowerCase();
+      const idWithoutUnderscore = id.replace(/_/g, ' ');
+      return (
+        name.includes(query) ||
+        desc.includes(query) ||
+        id.includes(query) ||
+        idWithoutUnderscore.includes(query)
+      );
+    });
+  }, [dataSourceTemplates, searchString]);
 
   // useListTenantUser();
   const { categorizedList } = useListDataSource();
@@ -124,7 +149,7 @@ const DataSource = () => {
         </section>
 
         <section className="mt-8">
-          <header className="flex flex-row items-center justify-between space-y-0 p-0 pb-4">
+          <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-0 pb-4">
             {/* <Users className="mr-2 h-5 w-5 text-[#1677ff]" /> */}
             <h2 className="text-2xl font-medium">
               {t('setting.availableSources')}
@@ -132,19 +157,33 @@ const DataSource = () => {
                 {t('setting.availableSourcesDescription')}
               </div>
             </h2>
+            <div className="w-full sm:w-72">
+              <SearchInput
+                value={searchString}
+                onChange={(e) => setSearchString(e.target.value)}
+                placeholder={
+                  t('setting.searchDataSource') || t('common.search')
+                }
+              />
+            </div>
           </header>
 
-          {/* <TenantTable searchTerm={searchTerm}></TenantTable> */}
-          <ul className="@container grid sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-4 3xl:grid-cols-4 gap-4">
-            {dataSourceTemplates.map((item) => (
-              <li key={item.id} className="h-full">
-                <AvailableSourceCard
-                  {...item}
-                  onAdd={() => showAddingModal(item)}
-                />
-              </li>
-            ))}
-          </ul>
+          {filteredDataSourceTemplates.length === 0 ? (
+            <div className="text-text-secondary w-full flex justify-center items-center h-32 border-0.5 border-dashed border-border-button rounded-lg">
+              {t('setting.noDataSourceFound') || t('common.noData')}
+            </div>
+          ) : (
+            <ul className="@container grid sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-4 3xl:grid-cols-4 gap-4">
+              {filteredDataSourceTemplates.map((item) => (
+                <li key={item.id} className="h-full">
+                  <AvailableSourceCard
+                    {...item}
+                    onAdd={() => showAddingModal(item)}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       </div>
 

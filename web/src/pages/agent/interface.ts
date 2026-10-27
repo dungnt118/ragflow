@@ -1,5 +1,6 @@
 import { FormInstance } from '@/interfaces/antd-compat';
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
+import { IFeedbackConfig } from '@/interfaces/request/chat';
 import { FieldErrors } from 'react-hook-form';
 
 export interface IOperatorForm {
@@ -46,6 +47,7 @@ export type IInputs = {
   inputs: Record<string, BeginQuery>;
   prologue: string;
   mode: string;
+  feedback_config?: IFeedbackConfig;
 };
 
 export type IOutputs = Record<

@@ -9,9 +9,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useDeleteAgent } from '@/hooks/use-agent-request';
 import { IFlow } from '@/interfaces/database/agent';
-import { PenLine, Tag, Trash2 } from 'lucide-react';
+import { Logs, PenLine, Tag, Trash2 } from 'lucide-react';
 import {
   MouseEventHandler,
   PropsWithChildren,
@@ -32,6 +33,7 @@ export function AgentDropdown({
   }) {
   const { t } = useTranslation();
   const { deleteAgent } = useDeleteAgent();
+  const { navigateToAgentLogs } = useNavigatePage();
   const [tagEditorOpen, setTagEditorOpen] = useState(false);
 
   const handleShowAgentRenameModal: MouseEventHandler<HTMLDivElement> =
@@ -42,6 +44,14 @@ export function AgentDropdown({
       },
       [agent, showAgentRenameModal],
     );
+
+  const handleOpenAgentLogs: MouseEventHandler<HTMLDivElement> = useCallback(
+    (e) => {
+      e.stopPropagation();
+      navigateToAgentLogs(agent.id)();
+    },
+    [agent.id, navigateToAgentLogs],
+  );
 
   const handleEditTags: MouseEventHandler<HTMLDivElement> = useCallback((e) => {
     e.stopPropagation();
@@ -59,6 +69,12 @@ export function AgentDropdown({
         <DropdownMenuContent>
           <DropdownMenuItem onClick={handleShowAgentRenameModal}>
             {t('common.rename')} <PenLine />
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={handleOpenAgentLogs}
+            data-testid={`agent-dropdown-logs-${agent.id}`}
+          >
+            {t('flow.log', 'Nhật ký & Đánh giá')} <Logs />
           </DropdownMenuItem>
           <DropdownMenuItem onClick={handleEditTags}>
             {t('flow.editTags')} <Tag />

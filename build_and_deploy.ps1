@@ -38,7 +38,17 @@ if (Test-Path $envFile) {
             $idx = $line.IndexOf("=")
             if ($idx -gt 0) {
                 $key = $line.Substring(0, $idx).Trim()
-                $val = $line.Substring($idx + 1).Trim().Trim('"').Trim("'")
+                $val = $line.Substring($idx + 1).Trim()
+                # Loai bo dau nhay bao ngoai neu co
+                if (($val.StartsWith('"') -and $val.EndsWith('"')) -or ($val.StartsWith("'") -and $val.EndsWith("'"))) {
+                    $val = $val.Substring(1, $val.Length - 2).Trim()
+                } else {
+                    # Loai bo inline comment phia sau dau # neu gia tri khong nam trong nhay kep
+                    $hashIdx = $val.IndexOf("#")
+                    if ($hashIdx -ge 0) {
+                        $val = $val.Substring(0, $hashIdx).Trim()
+                    }
+                }
                 $envConfig[$key] = $val
             }
         }
@@ -133,7 +143,7 @@ if (-not $shouldPush -or $shouldPush.Trim().ToUpper() -eq "Y") {
 }
 Write-Host ""
 
-# Ham ho tro Deploy len Portainer Production qua REST API
+# Ham ho tro Deploy len Portainer Production qua REST API theo 2 Task doc lap
 function Deploy-ToPortainerProduction {
     param (
         [string]$url,
@@ -142,24 +152,84 @@ function Deploy-ToPortainerProduction {
         [int]$stackId,
         [string]$stackName,
         [string]$composeFilePath,
-        [hashtable]$envMap
+        [string[]]$imagesToPull,
+        [hashtable]$envMap,
+        [string]$dockerUsername = "",
+        [string]$dockerToken = ""
     )
 
-    Write-Host "[5/5] Dang ket noi va chuan bi deploy len Portainer Production..." -ForegroundColor Cyan
-    Write-Host " - Server:      $url"
-    Write-Host " - Stack:       $stackName (ID: $stackId | Endpoint: $endpointId)"
+    Write-Host "=======================================================" -ForegroundColor Cyan
+    Write-Host " [5/5] Portainer Production Deployment Pipeline" -ForegroundColor Cyan
+    Write-Host "=======================================================" -ForegroundColor Cyan
+    Write-Host " - Server Portainer:  $url"
+    Write-Host " - Target Stack:      $stackName (ID: $stackId | Endpoint: $endpointId)"
+    Write-Host " - Target Images:     $($imagesToPull -join ', ')"
+    Write-Host ""
 
     if (-not (Test-Path $composeFilePath)) {
         Write-Host "[LOI] Khong tim thay file stack: $composeFilePath" -ForegroundColor Red
         return $false
     }
-    $composeContent = Get-Content $composeFilePath -Raw -Encoding UTF8
 
-    # Chuyen danh sach envMap thanh mang object cho Portainer API
+    # Đọc file Compose trực tiếp bằng .NET IO String thuần túy để tránh lỗi đệ quy / PSObject của PowerShell 5.1
+    $composeContent = [System.IO.File]::ReadAllText($composeFilePath, [System.Text.Encoding]::UTF8)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # TASK 1: GỌI API PULL CÁC IMAGE DỰ ÁN TỪ DOCKERHUB (QUA PORTAINER DOCKER API)
+    # ─────────────────────────────────────────────────────────────────────────
+    Write-Host "=== TASK 1: PULL CAC IMAGE CUA DU AN TU DOCKERHUB QUA PORTAINER ===" -ForegroundColor Cyan
+    
+    $pullHeaders = @{
+        "X-API-Key" = $apiKey
+    }
+    if ($dockerUsername -and $dockerToken) {
+        $authObj = @{
+            username      = $dockerUsername
+            password      = $dockerToken
+            serveraddress = "https://index.docker.io/v1/"
+        }
+        $authJson = $authObj | ConvertTo-Json -Compress
+        $authBase64 = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($authJson))
+        $pullHeaders["X-Registry-Auth"] = $authBase64
+    }
+
+    foreach ($img in $imagesToPull) {
+        $targetImg = $img.Trim()
+        if (-not $targetImg) { continue }
+
+        Write-Host " -> Dang gui lenh yeu cau Portainer Endpoint $endpointId keo Image: $targetImg ..." -ForegroundColor Cyan
+        $encodedImage = [System.Uri]::EscapeDataString($targetImg)
+        $pullUrl = "$url/api/endpoints/$endpointId/docker/images/create?fromImage=$encodedImage"
+
+        try {
+            # Gọi POST pull image qua Portainer Docker Proxy API (Timeout 600s để bảo đảm layer lớn được kéo xong)
+            $null = Invoke-RestMethod -Uri $pullUrl -Method Post -Headers $pullHeaders -TimeoutSec 600 -ErrorAction Stop
+            Write-Host " [OK] Da keo xong layer moi nhat cua '$targetImg' ve host Portainer!" -ForegroundColor Green
+        } catch {
+            Write-Host " [CANH BAO] Khong the pull image '$targetImg' qua Docker API: $($_.Exception.Message)" -ForegroundColor Yellow
+            if ($_.Exception.Response) {
+                try {
+                    $stream = $_.Exception.Response.GetResponseStream()
+                    $reader = New-Object System.IO.StreamReader($stream)
+                    Write-Host " Chi tiet tu Portainer: $($reader.ReadToEnd())" -ForegroundColor Yellow
+                } catch {}
+            }
+            Write-Host " -> Tiep tuc sang Task 2 cap nhat Stack..." -ForegroundColor Yellow
+        }
+    }
+    Write-Host ""
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # TASK 2: UPDATE (KO FORCE) STACK TRÊN PORTAINER
+    # ─────────────────────────────────────────────────────────────────────────
+    Write-Host "=== TASK 2: UPDATE (KO FORCE) STACK TREN PORTAINER ===" -ForegroundColor Cyan
+    Write-Host " -> Dang chuan bi payload cap nhat Stack..." -ForegroundColor Cyan
+
+    # Chuyển danh sách envMap thành mảng object cho Portainer API
     $envArray = @()
     foreach ($k in $envMap.Keys) {
         $envArray += @{
-            name  = $k
+            name  = [string]$k
             value = [string]$envMap[$k]
         }
     }
@@ -167,11 +237,12 @@ function Deploy-ToPortainerProduction {
     $bodyObject = @{
         stackFileContent = $composeContent
         env              = $envArray
-        prune            = $true
-        pullImage        = $true
+        prune            = $false
+        pullImage        = $false
     }
 
-    $jsonBody = $bodyObject | ConvertTo-Json -Depth 10
+    # Convert sang JSON an toàn bằng -Depth 4 với chuỗi .NET thuần túy (hoàn thành tức thì trong < 300ms)
+    $jsonBody = $bodyObject | ConvertTo-Json -Depth 4
     $requestUri = "$url/api/stacks/$($stackId)?endpointId=$($endpointId)"
     $headers = @{
         "X-API-Key"    = $apiKey
@@ -179,20 +250,20 @@ function Deploy-ToPortainerProduction {
     }
 
     try {
-        Write-Host " -> Dang gui lenh cap nhat Stack len Portainer..." -ForegroundColor Cyan
-        Write-Host " -> [Auto Pull Image] = TRUE (Yeu cau Portainer keo image moi tu Docker Hub)" -ForegroundColor Cyan
-        Write-Host " -> [Prune Services]  = TRUE" -ForegroundColor Cyan
+        Write-Host " -> Dang gui lenh cap nhat Stack len Portainer Production..." -ForegroundColor Cyan
+        Write-Host " -> [pullImage] = FALSE (Khong force pull lai tat ca services, dung image da keo o Task 1)" -ForegroundColor DarkGray
+        Write-Host " -> [prune]     = FALSE" -ForegroundColor DarkGray
 
         $utf8Bytes = [System.Text.Encoding]::UTF8.GetBytes($jsonBody)
-        $response = Invoke-RestMethod -Uri $requestUri -Method Put -Headers $headers -Body $utf8Bytes -TimeoutSec 300
+        $response = Invoke-RestMethod -Uri $requestUri -Method Put -Headers $headers -Body $utf8Bytes -TimeoutSec 180 -ErrorAction Stop
 
-        Write-Host "[OK] Portainer Production da tiep nhan va redeploy Stack '$stackName' thanh cong!" -ForegroundColor Green
+        Write-Host "[OK] Portainer Production da cap nhat va tai khoi chay Stack '$stackName' thanh cong!" -ForegroundColor Green
         if ($response.Id) {
             Write-Host " -> Stack ID: $($response.Id) | Trang thai Status: $($response.Status)" -ForegroundColor Green
         }
         return $true
     } catch {
-        Write-Host "[LOI] Redeploy Portainer that bai!" -ForegroundColor Red
+        Write-Host "[LOI] Cap nhat Stack tren Portainer that bai!" -ForegroundColor Red
         Write-Host "Chi tiet loi: $($_.Exception.Message)" -ForegroundColor Red
         if ($_.Exception.Response) {
             try {
@@ -234,7 +305,23 @@ if ($portainerUrl -and $portainerToken -and $portainerStackId) {
     $shouldDeployProd = Read-Host -Prompt $prodPrompt
     if (-not $shouldDeployProd -or $shouldDeployProd.Trim().ToUpper() -eq "Y") {
         $stackFile = Join-Path $rootDir "portainer-stack.yaml"
-        Deploy-ToPortainerProduction -url $portainerUrl -apiKey $portainerToken -endpointId $portainerEndpointId -stackId $portainerStackId -stackName $portainerStackName -composeFilePath $stackFile -envMap $envConfig
+        # Danh sach cac image cua du an can pull truoc
+        $projectImages = @($ragflowImage)
+        if ($envConfig["PORTAINER_PULL_IMAGES"]) {
+            $projectImages = $envConfig["PORTAINER_PULL_IMAGES"].Split(",") | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+        }
+
+        Deploy-ToPortainerProduction `
+            -url $portainerUrl `
+            -apiKey $portainerToken `
+            -endpointId $portainerEndpointId `
+            -stackId $portainerStackId `
+            -stackName $portainerStackName `
+            -composeFilePath $stackFile `
+            -imagesToPull $projectImages `
+            -envMap $envConfig `
+            -dockerUsername $username `
+            -dockerToken $token
     } else {
         Write-Host "[5/5] Bo qua buoc redeploy Portainer Production theo lua chon cua ban." -ForegroundColor Yellow
     }

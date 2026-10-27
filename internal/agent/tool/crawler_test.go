@@ -135,14 +135,73 @@ func TestCrawler_RejectsOversizedResponse(t *testing.T) {
 	}
 }
 
-func TestCrawler_RejectsMaxDepthGreaterThanZero(t *testing.T) {
+func TestCrawler_RejectsMaxDepthOutOfRange(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 
 	c := NewCrawlerTool()
-	_, err := c.InvokableRun(ctx, `{"query":"https://example.com","max_depth":1}`)
+	_, err := c.InvokableRun(ctx, `{"query":"https://example.com","max_depth":5}`)
 	if !errors.Is(err, ErrCrawlerDepthUnsupported) {
 		t.Fatalf("err = %v, want ErrCrawlerDepthUnsupported", err)
+	}
+}
+
+func TestCrawler_MultiPageSpiderCrawlAndMarkdownExtraction(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		switch r.URL.Path {
+		case "/", "":
+			_, _ = w.Write([]byte(`<!DOCTYPE html><html><head><title>Portal Home</title></head><body>
+				<nav><a href="/article-one">Article One</a></nav>
+				<main><article><h1>Portal Home</h1><p>Welcome to the documentation portal.</p></article></main>
+				<script id="__NUXT_DATA__" type="application/json">[{"postId":1},"article-two"]</script>
+			</body></html>`))
+		case "/article-one":
+			_, _ = w.Write([]byte(`<!DOCTYPE html><html><head><title>Article One</title></head><body>
+				<aside>Sidebar menu noise</aside>
+				<article><h1>Article One</h1><p>` + strings.Repeat("Detailed operational guide for building management module. ", 4) + `</p></article>
+			</body></html>`))
+		case "/article-two":
+			_, _ = w.Write([]byte(`<!DOCTYPE html><html><head><title>Article Two</title></head><body>
+				<article><h1>Article Two</h1><p>` + strings.Repeat("Detailed operational guide for resident onboarding module. ", 4) + `</p></article>
+			</body></html>`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	loopbackResolver := func(rawURL string) (string, net.IP, error) {
+		u, err := url.Parse(rawURL)
+		if err != nil {
+			return "", nil, err
+		}
+		host := u.Hostname()
+		return host, net.ParseIP(host), nil
+	}
+	c := NewCrawlerTool().WithResolver(loopbackResolver)
+	out, err := c.InvokableRun(ctx,
+		`{"query":`+jsonString(srv.URL)+`,"max_depth":1,"max_pages":5,"extract_type":"markdown"}`)
+	if err != nil {
+		t.Fatalf("InvokableRun multi-page: %v", err)
+	}
+
+	var got crawlerResult
+	if jerr := json.Unmarshal([]byte(out), &got); jerr != nil {
+		t.Fatalf("output is not valid JSON: %v (raw=%s)", jerr, out)
+	}
+	if len(got.Pages) != 3 {
+		t.Fatalf("len(Pages) = %d, want 3 (got=%+v)", len(got.Pages), got.Pages)
+	}
+	if !strings.Contains(got.Content, "building management module") || !strings.Contains(got.Content, "resident onboarding module") {
+		t.Fatalf("aggregated Content missing crawled child pages: %q", got.Content)
+	}
+	if strings.Contains(got.Pages[1].Markdown, "Sidebar menu noise") {
+		t.Fatalf("expected clean article Markdown to strip <aside>, got: %q", got.Pages[1].Markdown)
 	}
 }
 

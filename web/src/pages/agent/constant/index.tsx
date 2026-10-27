@@ -513,6 +513,22 @@ export const initialNoteValues = {
 export const initialCrawlerValues = {
   extract_type: 'markdown',
   query: '',
+  max_depth: 0,
+  max_pages: 10,
+  outputs: {
+    content: {
+      value: '',
+      type: 'string',
+    },
+    markdown: {
+      value: '',
+      type: 'string',
+    },
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+  },
 };
 
 export const initialInvokeValues = {

@@ -121,6 +121,71 @@ describe('Sitemap data source', () => {
   });
 });
 
+describe('Web Crawler data source', () => {
+  it('registers its catalog entry and defaults', () => {
+    const info = generateDataSourceInfo(translate)[DataSourceKey.WEB_CRAWLER];
+    const defaults = DataSourceFormDefaultValues[DataSourceKey.WEB_CRAWLER];
+
+    expect(info.name).toBe('Web Crawler (Spider)');
+    expect(info.description).toBe('setting.webCrawlerDescription');
+    expect(defaults).toEqual({
+      name: '',
+      source: 'web_crawler',
+      config: {
+        start_url: '',
+        crawl_mode: 'auto',
+        extract_strategy: 'article_clean',
+        max_depth: 2,
+        max_pages: 300,
+        same_domain_only: true,
+        url_filter: '',
+        exclude_url_filter: '',
+        follow_pdf_links: false,
+        restrict_pdf_to_domain: true,
+        crawl_delay_ms: 100,
+        user_agent: '',
+        batch_size: 10,
+      },
+    });
+  });
+
+  it('exposes crawl mode and extraction strategy selectors with bounded depth and pages', () => {
+    const fields = getDataSourceFieldsWithExtras(
+      translate,
+      DataSourceKey.WEB_CRAWLER,
+    ) as Array<{
+      name: string;
+      type?: FormFieldType;
+      required?: boolean;
+      options?: Array<{ label: string; value: string }>;
+      validation?: { min?: number; max?: number };
+    }>;
+    const startUrl = fields.find((f) => f.name === 'config.start_url');
+    const crawlMode = fields.find((f) => f.name === 'config.crawl_mode');
+    const extractStrategy = fields.find(
+      (f) => f.name === 'config.extract_strategy',
+    );
+    const maxDepth = fields.find((f) => f.name === 'config.max_depth');
+    const maxPages = fields.find((f) => f.name === 'config.max_pages');
+
+    expect(startUrl?.required).toBe(true);
+    expect(crawlMode?.type).toBe(FormFieldType.Select);
+    expect(crawlMode?.options?.map((o) => o.value)).toEqual([
+      'auto',
+      'html_links',
+      'ssr_spa',
+      'sitemap_hybrid',
+    ]);
+    expect(extractStrategy?.type).toBe(FormFieldType.Select);
+    expect(extractStrategy?.options?.map((o) => o.value)).toEqual([
+      'article_clean',
+      'full_page',
+    ]);
+    expect(maxDepth?.validation).toMatchObject({ min: 0, max: 10 });
+    expect(maxPages?.validation).toMatchObject({ min: 1, max: 5000 });
+  });
+});
+
 describe('Google Drive data source', () => {
   it('lets a folder-only connector leave My Drive emails empty', () => {
     const fields = getDataSourceFieldsWithExtras(

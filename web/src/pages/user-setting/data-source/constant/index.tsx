@@ -18,7 +18,7 @@ import { FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { TFunction } from 'i18next';
-import { BookOpen, Globe, Mail, Rss, Search } from 'lucide-react';
+import { BookOpen, Globe, Mail, Radar, Rss, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
@@ -36,6 +36,7 @@ import { jiraConstant } from './jira-constant';
 import { S3Constant } from './s3-constant';
 import { seafileConstant } from './seafile-constant';
 import { sitemapConstant } from './sitemap-constant';
+import { webCrawlerConstant } from './web-crawler-constant';
 
 export enum DataSourceKey {
   CONFLUENCE = 'confluence',
@@ -71,6 +72,7 @@ export enum DataSourceKey {
   REST_API = 'rest_api',
   RSS = 'rss',
   SITEMAP = 'sitemap',
+  WEB_CRAWLER = 'web_crawler',
   ONEDRIVE = 'onedrive',
   OUTLOOK = 'outlook',
   SALESFORCE = 'salesforce',
@@ -167,6 +169,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.SITEMAP]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.WEB_CRAWLER]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.MOODLE]: {
     syncDeletedFiles: true,
   },
@@ -224,6 +229,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Sitemap',
       description: t(`setting.${DataSourceKey.SITEMAP}Description`),
       icon: <Globe className="text-text-primary" size={22} />,
+    },
+    [DataSourceKey.WEB_CRAWLER]: {
+      name: 'Web Crawler (Spider)',
+      description: t('setting.webCrawlerDescription'),
+      icon: <Radar className="text-text-primary" size={22} />,
     },
     [DataSourceKey.GOOGLE_CLOUD_STORAGE]: {
       name: 'Google Cloud Storage',
@@ -814,6 +824,7 @@ const generateDataSourceFormFields = (t: TFunction) => ({
     },
   ],
   [DataSourceKey.SITEMAP]: sitemapConstant(t),
+  [DataSourceKey.WEB_CRAWLER]: webCrawlerConstant(t),
   [DataSourceKey.GOOGLE_CLOUD_STORAGE]: [
     {
       label: t('setting.dataSourceFieldGcsAccessKeyId'),
@@ -2316,6 +2327,25 @@ export const DataSourceFormDefaultValues = {
       url_filter: '',
       follow_pdf_links: false,
       restrict_pdf_to_domain: true,
+      user_agent: '',
+      batch_size: 10,
+    },
+  },
+  [DataSourceKey.WEB_CRAWLER]: {
+    name: '',
+    source: DataSourceKey.WEB_CRAWLER,
+    config: {
+      start_url: '',
+      crawl_mode: 'auto',
+      extract_strategy: 'article_clean',
+      max_depth: 2,
+      max_pages: 300,
+      same_domain_only: true,
+      url_filter: '',
+      exclude_url_filter: '',
+      follow_pdf_links: false,
+      restrict_pdf_to_domain: true,
+      crawl_delay_ms: 100,
       user_agent: '',
       batch_size: 10,
     },

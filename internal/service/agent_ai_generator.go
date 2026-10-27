@@ -313,14 +313,14 @@ Respond ONLY with a valid JSON object matching this exact schema (no markdown fe
   "nodes": [
     {
       "key": "unique_short_key",
-      "component_name": "Begin | Retrieval | Categorize | Agent | ExeSQL | CodeExec | DocGenerator | Email | TavilySearch | DuckDuckGo | Wikipedia | Message | File | Parser | TokenChunker | TitleChunker | Extractor | Tokenizer",
+      "component_name": "Begin | Retrieval | Categorize | Agent | Crawler | ExeSQL | CodeExec | DocGenerator | Email | TavilySearch | DuckDuckGo | Wikipedia | Message | File | Parser | TokenChunker | TitleChunker | Extractor | Tokenizer",
       "name": "Human-readable node title",
       "role": "Vietnamese explanation of this node's specific responsibility in the workflow",
       "upstream_keys": ["parent_key"],
       "downstream_keys": ["child_key"],
       "config": {
         "sys_prompt": "Custom system prompt for Agent node",
-        "tools": ["TavilySearch", "DuckDuckGo", "Wikipedia", "Retrieval"],
+        "tools": ["Crawler", "TavilySearch", "DuckDuckGo", "Wikipedia", "Retrieval"],
         "categories": [
           {"name": "Category Name", "description": "When to route here", "examples": ["example 1"], "target_key": "child_key"}
         ]
@@ -331,7 +331,8 @@ Respond ONLY with a valid JSON object matching this exact schema (no markdown fe
 Rules:
 1. For "agent_canvas": First node MUST have key="begin" and component_name="Begin". Terminal node(s) MUST have component_name="Message".
 2. For "dataflow_canvas": First node MUST have key="File" and component_name="File", followed by "Parser", then either "TokenChunker" or "TitleChunker", optional "Extractor", and ending with "Tokenizer".
-3. Preferred category requested by user: ` + preferredCategory
+3. Use "Crawler" as an action node or attach "Crawler" in Agent "tools" when the user wants to crawl a website/CMS/URL (e.g. https://cms.demego.vn/), extract web pages into Markdown, or spider same-domain subpages.
+4. Preferred category requested by user: ` + preferredCategory
 }
 
 func extractJSONObject(raw string) string {
@@ -350,7 +351,7 @@ func isValidBlueprint(bp *aiBlueprint) bool {
 	}
 	allowedComponents := map[string]bool{
 		"Begin": true, "Retrieval": true, "Categorize": true, "Agent": true,
-		"ExeSQL": true, "CodeExec": true, "DocGenerator": true, "Email": true,
+		"Crawler": true, "ExeSQL": true, "CodeExec": true, "DocGenerator": true, "Email": true,
 		"TavilySearch": true, "DuckDuckGo": true, "Wikipedia": true, "Message": true,
 		"File": true, "Parser": true, "TokenChunker": true, "TitleChunker": true,
 		"Extractor": true, "Tokenizer": true,
@@ -591,6 +592,53 @@ func buildRuleBasedBlueprint(prompt, requestedCategory string) *aiBlueprint {
 					Key: "message_1", ComponentName: "Message", Name: "Xuất Báo cáo Phân tích",
 					Role:           "Hiển thị báo cáo BI hoàn chỉnh cho người dùng",
 					UpstreamKeys:   []string{"agent_bi_analyst"},
+					DownstreamKeys: []string{},
+				},
+			},
+		}
+	}
+
+	// Pattern 2.5: Web Crawler / Spider / CMS Extraction (e.g. cms.demego.vn)
+	if containsAny(lower, "crawl", "crawler", "spider", "cào web", "cào dữ liệu", "quét web", "cms", "demego", "http://", "https://", "trang web", "website") {
+		return &aiBlueprint{
+			Title:          "Trợ lý AI Thu thập & Phân tích Nội dung Website / CMS (Web Crawler + RAG)",
+			Description:    "Luồng tự động cào dữ liệu trực tiếp từ URL/Website hoặc cổng CMS (hỗ trợ cả HTML tĩnh và SSR/SPA như Nuxt/Next.js) bằng Crawler Node, đối chiếu với Kho tri thức (Retrieval) và tổng hợp bằng Agent được gắn công cụ Web Crawler đệ quy.",
+			CanvasCategory: "agent_canvas",
+			Explanation:    "AI Brain nhận diện nhu cầu thu thập và khai thác dữ liệu từ Website/CMS (như cms.demego.vn). Hệ thống thiết kế luồng 5 chặng: (1) Begin tiếp nhận URL hoặc yêu cầu tra cứu -> (2) Crawler bóc tách nội dung bài viết sạch dạng Markdown và khám phá các liên kết con cùng tên miền -> (3) Retrieval tra cứu bổ sung từ Dataset nội bộ -> (4) Agent Phân tích được trang bị công cụ Crawler (cho phép chủ động cào sâu thêm các trang con khi cần) và DuckDuckGo -> (5) Message xuất báo cáo tổng hợp.",
+			Prologue:       "Xin chào! Tôi là Trợ lý AI Thu thập & Khai thác Website/CMS (Web Crawler). Hãy gửi đường dẫn URL (ví dụ: https://cms.demego.vn/) hoặc câu hỏi cần trích xuất nội dung nhé!",
+			Nodes: []aiPlannedNode{
+				{
+					Key: "begin", ComponentName: "Begin", Name: "Begin",
+					Role:           "Tiếp nhận URL trang web hoặc yêu cầu trích xuất thông tin từ người dùng",
+					UpstreamKeys:   []string{},
+					DownstreamKeys: []string{"crawler_1", "retrieval_1"},
+				},
+				{
+					Key: "crawler_1", ComponentName: "Crawler", Name: "Bộ Cào Web & Bóc tách Markdown (Web Crawler)",
+					Role:           "Tải trang web/CMS, tự động loại bỏ menu/sidebar nhiễu và trích xuất nội dung bài viết sạch kèm danh sách liên kết con",
+					UpstreamKeys:   []string{"begin"},
+					DownstreamKeys: []string{"agent_crawler"},
+				},
+				{
+					Key: "retrieval_1", ComponentName: "Retrieval", Name: "Tra cứu Kho Tri thức Đã Đồng bộ (Dataset)",
+					Role:           "Truy hồi các bài viết đã được lập chỉ mục từ Data Source Web Crawler / Sitemap trong Dataset",
+					UpstreamKeys:   []string{"begin"},
+					DownstreamKeys: []string{"agent_crawler"},
+				},
+				{
+					Key: "agent_crawler", ComponentName: "Agent", Name: "Chuyên gia Phân tích Nội dung Web & CMS",
+					Role:           "Kết hợp nội dung vừa cào trực tiếp từ Crawler với dữ liệu trong Dataset và công cụ Crawler đệ quy để tổng hợp câu trả lời",
+					UpstreamKeys:   []string{"crawler_1", "retrieval_1"},
+					DownstreamKeys: []string{"message_1"},
+					Config: map[string]interface{}{
+						"sys_prompt": "Bạn là Chuyên gia Khai thác & Tổng hợp Tri thức từ Website/CMS. Bạn có các nguồn dữ liệu sau:\n1. Nội dung trang web vừa được bóc tách trực tiếp bởi Crawler:\n{crawler_1@formalized_content}\n2. Dữ liệu từ Kho tri thức nội bộ (Dataset):\n{retrieval_1@formalized_content}\n3. Công cụ `web_crawler` (Crawler) cho phép bạn chủ động cào thêm các đường dẫn bài viết con (max_depth=1..3, extract_type='markdown') nếu người dùng yêu cầu xem chi tiết.\n\nHãy giải đáp chính xác, đầy đủ và có trích dẫn URL rõ ràng cho yêu cầu: {sys.query}.",
+						"tools":      []string{"Crawler", "DuckDuckGo"},
+					},
+				},
+				{
+					Key: "message_1", ComponentName: "Message", Name: "Xuất Kết quả Trích xuất",
+					Role:           "Hiển thị nội dung đã bóc tách và tổng hợp cho người dùng",
+					UpstreamKeys:   []string{"agent_crawler"},
 					DownstreamKeys: []string{},
 				},
 			},
@@ -960,6 +1008,8 @@ func reactFlowNodeType(componentName, canvasCategory string) string {
 		return "contextNode"
 	case "Tokenizer":
 		return "tokenizerNode"
+	case "Crawler":
+		return "ragNode"
 	default:
 		if canvasCategory == "dataflow_canvas" {
 			return "ragNode"
@@ -1173,6 +1223,32 @@ func buildDualShapeNodePayloads(
 	case "Agent":
 		return buildAgentNodePayloads(n, upIDs, resolvedLLMID, dsList)
 
+	case "Crawler":
+		queryInput := "{sys.query}"
+		if len(upIDs) > 0 && upIDs[0] != "begin" {
+			queryInput = fmt.Sprintf("{%s@content}", upIDs[0])
+		}
+		if n.Config != nil {
+			if q, ok := n.Config["query"].(string); ok && strings.TrimSpace(q) != "" {
+				queryInput = strings.TrimSpace(q)
+			}
+		}
+		payload := map[string]interface{}{
+			"query":        queryInput,
+			"extract_type": "markdown",
+			"max_depth":    1,
+			"max_pages":    10,
+			"proxy":        "",
+			"outputs": map[string]interface{}{
+				"content":            map[string]interface{}{"type": "string", "value": ""},
+				"markdown":           map[string]interface{}{"type": "string", "value": ""},
+				"html":               map[string]interface{}{"type": "string", "value": ""},
+				"formalized_content": map[string]interface{}{"type": "string", "value": ""},
+				"json":               map[string]interface{}{"type": "Object", "value": map[string]interface{}{}},
+			},
+		}
+		return payload, cloneStringMap(payload), nil
+
 	case "ExeSQL":
 		sqlInput := "{sys.query}"
 		if len(upIDs) > 0 && upIDs[0] != "begin" {
@@ -1197,7 +1273,7 @@ func buildDualShapeNodePayloads(
 	case "Message":
 		var contentRefs []interface{}
 		for _, uID := range upIDs {
-			if strings.HasPrefix(uID, "Retrieval:") || strings.HasPrefix(uID, "ExeSQL:") {
+			if strings.HasPrefix(uID, "Retrieval:") || strings.HasPrefix(uID, "ExeSQL:") || strings.HasPrefix(uID, "Crawler:") {
 				contentRefs = append(contentRefs, fmt.Sprintf("{%s@formalized_content}", uID))
 			} else if uID != "begin" {
 				contentRefs = append(contentRefs, fmt.Sprintf("{%s@content}", uID))
@@ -1342,9 +1418,9 @@ func buildAgentNodePayloads(
 		}
 	}
 
-	// Automatically reference upstream Retrieval / ExeSQL / Agent outputs if not already referenced
+	// Automatically reference upstream Retrieval / ExeSQL / Crawler / Agent outputs if not already referenced
 	for _, uID := range upIDs {
-		if strings.HasPrefix(uID, "Retrieval:") || strings.HasPrefix(uID, "ExeSQL:") {
+		if strings.HasPrefix(uID, "Retrieval:") || strings.HasPrefix(uID, "ExeSQL:") || strings.HasPrefix(uID, "Crawler:") {
 			refToken := fmt.Sprintf("{%s@formalized_content}", uID)
 			if !strings.Contains(sysPrompt, uID) {
 				sysPrompt += "\n\nNgữ cảnh dữ liệu từ bước trước:\n" + refToken
@@ -1415,6 +1491,18 @@ func buildAgentNodePayloads(
 
 func buildAgentToolConfig(toolName string, dsList []interface{}) map[string]interface{} {
 	switch toolName {
+	case "Crawler", "web_crawler", "crawler":
+		return map[string]interface{}{
+			"component_name": "Crawler",
+			"id":             "Crawler",
+			"name":           "Crawler",
+			"params": map[string]interface{}{
+				"extract_type": "markdown",
+				"max_depth":    1,
+				"max_pages":    10,
+				"proxy":        "",
+			},
+		}
 	case "TavilySearch":
 		return map[string]interface{}{
 			"component_name": "TavilySearch",

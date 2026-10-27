@@ -492,3 +492,32 @@ func TestSitemapConnectorListEntriesBoundsFetches(t *testing.T) {
 		t.Fatalf("entries = %d, want %d", len(entries), maxSitemapFetches-1)
 	}
 }
+
+// TestSitemapConnectorFollowPageLinks verifies that enabling follow_page_links
+// expands incomplete sitemaps (such as a root-only sitemap) by discovering
+// same-domain HTML and SSR hydration links up to max_page_depth.
+func TestSitemapConnectorFollowPageLinks(t *testing.T) {
+	fixture := sitemapFixture{
+		"https://example.com/sitemap.xml": {"application/xml", `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://example.com/</loc></url></urlset>`},
+		"https://example.com/":            {"text/html", `<html><body><nav><a href="/guide-a">Guide A</a></nav><main><h1>Root</h1><p>Welcome</p></main><script id="__NUXT_DATA__" type="application/json">[{"postId":2,"slug":1},"guide-b",10]</script></body></html>`},
+		"https://example.com/guide-a":     {"text/html", `<html><body><main><h1>Guide A</h1><p>Content A <a href="/deep">Deep</a></p></main></body></html>`},
+		"https://example.com/guide-b":     {"text/html", `<html><body><main><h1>Guide B</h1><p>Content B</p></main></body></html>`},
+		"https://example.com/deep":        {"text/html", `<html><body><main><h1>Deep</h1><p>Content Deep</p></main></body></html>`},
+	}
+
+	connector := newSitemapTestConnector(t, map[string]any{
+		"follow_page_links": true,
+		"max_page_depth":    1,
+	}, fixture)
+
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	_, documents := drainSitemapSession(t, session)
+
+	want := []string{"https://example.com/", "https://example.com/guide-a", "https://example.com/guide-b"}
+	if got := sitemapDocIDs(documents); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("follow_page_links documents = %v, want %v", got, want)
+	}
+}

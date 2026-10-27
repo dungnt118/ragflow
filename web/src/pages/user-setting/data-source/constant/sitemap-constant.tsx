@@ -35,6 +35,27 @@ export const sitemapConstant = (t: TFunction) => [
     tooltip: t('setting.sitemapUrlFilterTip'),
   },
   {
+    label: t('setting.sitemapFollowPageLinks'),
+    name: 'config.follow_page_links',
+    type: FormFieldType.Switch,
+    required: false,
+    defaultValue: false,
+    tooltip: t('setting.sitemapFollowPageLinksTip'),
+  },
+  {
+    label: t('setting.sitemapMaxPageDepth'),
+    name: 'config.max_page_depth',
+    type: FormFieldType.Number,
+    required: false,
+    shouldRender: (formValues: any) =>
+      formValues?.config?.follow_page_links === true,
+    tooltip: t('setting.sitemapMaxPageDepthTip'),
+    validation: {
+      min: 1,
+      max: 5,
+    },
+  },
+  {
     label: t('setting.dataSourceFieldFollowPdfLinks'),
     name: 'config.follow_pdf_links',
     type: FormFieldType.Switch,

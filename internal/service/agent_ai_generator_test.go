@@ -67,6 +67,18 @@ func TestGenerateAgentByAI_RuleBasedArchitecturesAndDualShapeDSL(t *testing.T) {
 			wantComponentNames: []string{"Begin", "Retrieval", "Agent", "ExeSQL", "Message"},
 		},
 		{
+			name: "Web_Crawler_And_CMS_Extraction_Demego",
+			req: GenerateAgentByAIRequest{
+				Prompt:         "Xây dựng trợ lý AI cào dữ liệu website CMS https://cms.demego.vn/ và tổng hợp hướng dẫn quản lý tòa nhà",
+				CanvasCategory: "agent_canvas",
+				LLMID:          "gpt-4o___OpenAI-API@OpenAI-API-Compatible",
+				DatasetIDs:     []string{"ds-demego-cms"},
+			},
+			wantCategory:       "agent_canvas",
+			wantComponentNames: []string{"Begin", "Crawler", "Retrieval", "Agent", "Message"},
+			checkTools:         true,
+		},
+		{
 			name: "Hybrid_Web_Search_And_RAG_Research",
 			req: GenerateAgentByAIRequest{
 				Prompt:         "Trợ lý nghiên cứu thị trường kết hợp tìm kiếm mạng Internet TavilySearch và kho tài liệu nội bộ",

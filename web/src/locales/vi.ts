@@ -790,6 +790,82 @@ export default {
       githubWorkflowGuideCopied: 'Đã sao chép vào bộ nhớ tạm!',
       githubWorkflowGuideNativeSyncNote:
         'Mẹo: Bạn cũng có thể bật trực tiếp tùy chọn "Bao gồm Tệp trong Repository (Tài liệu / Mã nguồn)" ngay trên màn hình cấu hình này và liên kết với Dataset (bật Auto-Parse) — hệ thống sẽ tự động kéo (Pull) và lập chỉ mục thư mục chỉ định mà không cần dựng CI/CD.',
+      sitemapDescription:
+        'Kết nối tệp sitemap.xml công khai (hoặc bật mở rộng liên kết trang) để đồng bộ các trang web và tài liệu PDF vào Kho tri thức.',
+      dataSourceFieldSitemapUrl: 'Đường dẫn Sitemap (Sitemap URL)',
+      sitemapUrlTip:
+        'URL của tệp sitemap.xml hoặc sitemap index cần thu thập (ví dụ: https://example.com/sitemap.xml). Nếu website có sitemap.xml bị thiếu đường dẫn (như một số trang Nuxt/Next.js chỉ có 1 URL trang chủ), hãy bật tùy chọn "Mở rộng quét liên kết trang" bên dưới hoặc dùng nguồn dữ liệu "Web Crawler (Spider)".',
+      dataSourceFieldUrlFilter: 'Bộ lọc URL (Regex tùy chọn)',
+      sitemapUrlFilterTip:
+        'Biểu thức chính quy (Regex) tùy chọn. Chỉ các URL khớp với mẫu này mới được lập chỉ mục (ví dụ: ^https://example\\.com/docs/ để chỉ lấy phần tài liệu).',
+      sitemapFollowPageLinks:
+        'Mở rộng quét liên kết HTML & SSR từ các trang trong Sitemap',
+      sitemapFollowPageLinksTip:
+        'Bật tùy chọn này khi tệp sitemap.xml của website bị thiếu bài viết (ví dụ: chỉ liệt kê mỗi trang chủ). Hệ thống sẽ tự động quét thêm các thẻ <a href> và dữ liệu SSR Hydration (__NUXT_DATA__, __NEXT_DATA__) bên trong các trang để thu thập đầy đủ các bài viết cùng tên miền.',
+      sitemapMaxPageDepth: 'Độ sâu mở rộng liên kết trang (Max Page Depth)',
+      sitemapMaxPageDepthTip:
+        'Số cấp độ liên kết tối đa sẽ đi theo từ các URL gốc trong Sitemap (khuyên dùng: 1 hoặc 2).',
+      dataSourceFieldFollowPdfLinks: 'Thu thập cả tệp PDF đính kèm trong trang',
+      sitemapFollowPdfLinksTip:
+        'Tự động phát hiện và tải về các tệp tài liệu .pdf được dẫn link bên trong các trang HTML.',
+      dataSourceFieldRestrictPdfToDomain: 'Chỉ tải PDF thuộc cùng tên miền',
+      sitemapRestrictPdfToDomainTip:
+        'Chỉ tải các tệp PDF nằm trên cùng tên miền (domain) với website đang quét.',
+      dataSourceFieldUserAgent: 'User-Agent tùy chỉnh',
+      sitemapUserAgentTip:
+        'Chuỗi định danh trình duyệt (User-Agent) gửi kèm mỗi yêu cầu HTTP. Để trống để dùng mặc định.',
+      dataSourceFieldBatchSize: 'Kích thước lô đồng bộ (Batch Size)',
+      sitemapBatchSizeTip:
+        'Số lượng trang được tải và đẩy vào hàng đợi xử lý trong mỗi lô (mặc định: 10).',
+      webCrawlerDescription:
+        'Trình thu thập dữ liệu Website & CMS thông minh (Spider): tự động khám phá liên kết đa tầng (BFS), hỗ trợ cả Website HTML truyền thống lẫn các cổng CMS hiện đại dùng Nuxt 3 / Next.js / Vue / React SSR (như cms.demego.vn) không có Sitemap đầy đủ.',
+      webCrawlerStartUrl: 'URL Bắt đầu (Start URL)',
+      webCrawlerStartUrlTip:
+        'Nhập địa chỉ trang chủ, cổng tài liệu hướng dẫn (CMS/Docs) hoặc chuyên mục gốc cần thu thập (ví dụ: https://cms.demego.vn/). Trình thu thập sẽ xuất phát từ URL này để khám phá các bài viết con.',
+      webCrawlerCrawlMode: 'Cơ chế Thu thập & Loại Website (Crawl Mode)',
+      webCrawlerModeAuto:
+        'Tự động thông minh (Khuyên dùng - Kết hợp HTML + SSR/Nuxt/Next + Sitemap)',
+      webCrawlerModeHtmlLinks:
+        'Website HTML / CMS truyền thống (WordPress, Wiki, Docs tĩnh - Quét thẻ <a href>)',
+      webCrawlerModeSsrSpa:
+        'Website Nuxt 3 / Next.js / Vue / React SSR (Như cms.demego.vn - Quét Hydration JSON + API)',
+      webCrawlerModeSitemapHybrid:
+        'Ưu tiên Sitemap XML kết hợp mở rộng liên kết bài viết (Sitemap Hybrid)',
+      webCrawlerCrawlModeTip:
+        'Hướng dẫn chọn cơ chế phù hợp với từng loại Website:\n' +
+        '• Tự động thông minh (auto - Khuyên dùng): Tự động thử Sitemap, quét liên kết <a href>, đồng thời giải mã dữ liệu ngầm SSR (__NUXT_DATA__, __NEXT_DATA__) và API phân trang (/api/posts). Xử lý tốt mọi loại website.\n' +
+        '• Website HTML truyền thống (html_links): Phù hợp với WordPress, Joomla, Docusaurus, GitBook hoặc trang tĩnh có đầy đủ thẻ <a href="..."> trên menu/danh mục.\n' +
+        '• Website Nuxt 3 / Next.js / SSR SPA (ssr_spa): Thiết kế chuyên biệt cho các cổng CMS hiện đại (ví dụ: https://cms.demego.vn/) nơi sitemap.xml chỉ có 1 URL trang chủ và danh sách bài viết nằm trong payload JSON Hydration hoặc API phân trang.\n' +
+        '• Sitemap Hybrid (sitemap_hybrid): Đọc danh sách từ /sitemap.xml trước, sau đó tiếp tục đi theo các liên kết bài viết phát hiện trên từng trang.',
+      webCrawlerExtractStrategy:
+        'Chiến lược Bóc tách Nội dung (Extraction Strategy)',
+      webCrawlerExtractClean:
+        'Bài viết sạch - Tự động lọc bỏ Menu/Sidebar/Header/Footer lặp lại (Khuyên dùng cho RAG)',
+      webCrawlerExtractFull:
+        'Toàn bộ trang - Giữ nguyên toàn bộ văn bản trên trang HTML',
+      webCrawlerExtractStrategyTip:
+        '• Bài viết sạch (article_clean - Khuyên dùng): Tập trung trích xuất khối nội dung chính (<article>, <main>, .post-content) và loại bỏ thanh điều hướng (<nav>, <aside>, <footer>). Giúp ngăn chặn tình trạng menu 200-300 mục bị lặp lại ở mọi bài viết làm nhiễu kết quả tìm kiếm Vector RAG.\n' +
+        '• Toàn bộ trang (full_page): Giữ lại toàn bộ chữ hiển thị trên trang (phù hợp với trang Landing Page không dùng thẻ ngữ nghĩa <article>/<main>).',
+      webCrawlerMaxDepth: 'Độ sâu Quét liên kết (Max Depth)',
+      webCrawlerMaxDepthTip:
+        'Số bước nhảy liên kết tối đa tính từ URL Bắt đầu (0 = chỉ lấy đúng 1 trang Start URL; 1 = lấy Start URL + toàn bộ bài viết dẫn link trực tiếp từ trang chủ; 2..3 = quét sâu vào các danh mục con). Với các trang CMS như cms.demego.vn, đặt từ 1 đến 2 là thu thập trọn vẹn 100% bài viết.',
+      webCrawlerMaxPages: 'Giới hạn Số trang Tối đa (Max Pages)',
+      webCrawlerMaxPagesTip:
+        'Số lượng bài viết/trang tối đa cho phép thu thập trong một phiên đồng bộ (từ 1 đến 5000, mặc định: 300) nhằm kiểm soát thời gian và tài nguyên.',
+      webCrawlerSameDomainOnly:
+        'Chỉ quét các trang thuộc cùng tên miền (Same Domain Only)',
+      webCrawlerSameDomainOnlyTip:
+        'Khi bật (mặc định), trình thu thập chỉ đi theo các đường dẫn nằm trong cùng domain với URL Bắt đầu và tự động bỏ qua các liên kết trỏ ra mạng xã hội hoặc website bên ngoài.',
+      webCrawlerUrlFilter: 'Bộ lọc URL Cho phép - Regex (Include Filter)',
+      webCrawlerUrlFilterTip:
+        'Tùy chọn: Nhập biểu thức chính quy (Regex) để CHỈ thu thập các đường dẫn khớp mẫu (ví dụ: ^https://cms\\.demego\\.vn/quan-ly-.*). Để trống để lấy toàn bộ bài viết.',
+      webCrawlerExcludeUrlFilter:
+        'Bộ lọc URL Loại trừ - Regex (Exclude Filter)',
+      webCrawlerExcludeUrlFilterTip:
+        'Tùy chọn: Nhập biểu thức chính quy (Regex) để BỎ QUA các đường dẫn không cần thiết như trang đăng nhập, giỏ hàng, quản trị (ví dụ: /(login|register|admin|cart|tag/)).',
+      webCrawlerCrawlDelayMs: 'Độ trễ giữa các lần tải trang (ms)',
+      webCrawlerCrawlDelayMsTip:
+        'Thời gian nghỉ (tính bằng mili-giây) giữa 2 lần tải trang liên tiếp để tránh làm quá tải máy chủ đích hoặc bị chặn Rate-Limit (mặc định: 100ms).',
     },
     message: {
       registered: 'Đã đăng ký!',

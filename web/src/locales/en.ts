@@ -1755,6 +1755,59 @@ Example: Virtual Hosted Style`,
         'User-Agent header sent with every request. Leave empty to use RAGFlow-SitemapConnector/1.0.',
       sitemapBatchSizeTip:
         'Number of pages fetched and sent to RAGFlow per batch.',
+      sitemapFollowPageLinks:
+        'Follow HTML & SSR page links to expand incomplete sitemaps',
+      sitemapFollowPageLinksTip:
+        'Enable this when the target website has an incomplete sitemap.xml (for example, listing only the root homepage). RAGFlow will discover same-domain links from <a href> and SSR hydration payloads (__NUXT_DATA__, __NEXT_DATA__).',
+      sitemapMaxPageDepth: 'Max Page Link Depth',
+      sitemapMaxPageDepthTip:
+        'Maximum link hop depth to follow from sitemap entries when Follow Page Links is enabled (1 to 5).',
+      webCrawlerDescription:
+        'Intelligent Website & CMS Spider: recursively crawls web pages (BFS), supporting both traditional HTML sites and modern Nuxt 3 / Next.js / Vue / React SSR portals (e.g., cms.demego.vn) where sitemaps are missing or incomplete.',
+      webCrawlerStartUrl: 'Start URL',
+      webCrawlerStartUrlTip:
+        'Enter the root homepage, documentation portal, or category URL to start crawling from (e.g., https://cms.demego.vn/).',
+      webCrawlerCrawlMode: 'Crawl Mechanism & Website Type (Crawl Mode)',
+      webCrawlerModeAuto:
+        'Smart Auto-Detect (Recommended - HTML + SSR/Nuxt/Next + Sitemap)',
+      webCrawlerModeHtmlLinks:
+        'Traditional HTML / Static CMS (Crawl <a href> links)',
+      webCrawlerModeSsrSpa:
+        'Nuxt 3 / Next.js / Vue / React SSR Portal (Hydration JSON + API pagination)',
+      webCrawlerModeSitemapHybrid:
+        'Sitemap XML + Page Link Expansion (Sitemap Hybrid)',
+      webCrawlerCrawlModeTip:
+        'How to choose the right crawl mode for your target website:\n' +
+        '• Smart Auto-Detect (auto - Recommended): Automatically combines sitemap seeding, <a href> link discovery, SSR hydration payload extraction (__NUXT_DATA__, __NEXT_DATA__), and CMS API pagination (/api/posts).\n' +
+        '• Traditional HTML (html_links): Best for standard HTML websites, WordPress, Docusaurus, or wikis with standard <a href> navigation.\n' +
+        '• Nuxt 3 / Next.js SSR SPA (ssr_spa): Designed for modern SSR CMS sites (such as https://cms.demego.vn/) where sitemap.xml only lists the root URL and article slugs live inside hydration JSON or paginated APIs.\n' +
+        '• Sitemap Hybrid (sitemap_hybrid): Seeds from /sitemap.xml first and expands discovered article links on each page.',
+      webCrawlerExtractStrategy: 'Content Extraction Strategy',
+      webCrawlerExtractClean:
+        'Clean Article - Strip repeated Menu/Sidebar/Header/Footer (Recommended for RAG)',
+      webCrawlerExtractFull:
+        'Full Page - Keep all visible text blocks on the page',
+      webCrawlerExtractStrategyTip:
+        '• Clean Article (article_clean - Recommended): Focuses on main content containers (<article>, <main>, .post-content) and removes navigation/sidebar chrome (<nav>, <aside>, <footer>) so large menus are not duplicated across every RAG chunk.\n' +
+        '• Full Page (full_page): Retains all visible text on the page.',
+      webCrawlerMaxDepth: 'Max Crawl Depth',
+      webCrawlerMaxDepthTip:
+        'Maximum link hop depth from the Start URL (0 = Start URL only; 1 = Start URL + directly linked pages; 2..3 = deeper sub-categories).',
+      webCrawlerMaxPages: 'Max Pages Limit',
+      webCrawlerMaxPagesTip:
+        'Maximum number of pages to index per sync run (1 to 5000, default: 300).',
+      webCrawlerSameDomainOnly: 'Same Domain Only',
+      webCrawlerSameDomainOnlyTip:
+        'Only crawl pages hosted on the same domain as the Start URL.',
+      webCrawlerUrlFilter: 'Include URL Filter (Regex)',
+      webCrawlerUrlFilterTip:
+        'Optional regular expression. Only URLs matching this pattern will be indexed.',
+      webCrawlerExcludeUrlFilter: 'Exclude URL Filter (Regex)',
+      webCrawlerExcludeUrlFilterTip:
+        'Optional regular expression. URLs matching this pattern (e.g., /(login|register|admin|cart)) will be skipped.',
+      webCrawlerCrawlDelayMs: 'Crawl Delay Between Requests (ms)',
+      webCrawlerCrawlDelayMsTip:
+        'Politeness delay in milliseconds between consecutive HTTP requests (default: 100ms).',
       azure_devopsDescription:
         'Connect Azure DevOps to sync repository files and pull requests.',
       bitbucketDescription: 'Connect Bitbucket to sync PR content.',

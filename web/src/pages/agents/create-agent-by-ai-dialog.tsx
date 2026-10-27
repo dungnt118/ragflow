@@ -87,6 +87,16 @@ const QUICK_PROMPT_PRESETS: QuickPromptPreset[] = [
       'Design a Market & Competitor Research Assistant combining internal Dataset Retrieval with live web search tools (TavilySearch, DuckDuckGo, Wikipedia) to synthesize a cited report.',
   },
   {
+    id: 'web_crawler_cms',
+    labelVi: 'Cào Web & Khai thác Cổng CMS (Web Crawler + RAG)',
+    labelEn: 'Web Crawler & CMS Portal Extractor (Crawler + RAG)',
+    category: AgentCategory.AgentCanvas,
+    promptVi:
+      'Xây dựng Trợ lý AI Thu thập & Khai thác Cổng thông tin Website / CMS (ví dụ: https://cms.demego.vn/): sử dụng Action Node Crawler để cào dữ liệu bài viết sạch dạng Markdown (tự động lọc bỏ menu/sidebar nhiễu và phát hiện liên kết SSR/SPA), kết hợp tra cứu Kho tri thức (Retrieval) và trang bị công cụ Web Crawler đệ quy cho Agent để giải đáp chi tiết.',
+    promptEn:
+      'Build an AI Web Crawler & CMS Knowledge Assistant (e.g., https://cms.demego.vn/): use the Crawler action node to extract clean Markdown articles and discover same-domain links, combined with Dataset Retrieval and an Agent equipped with the recursive Crawler tool.',
+  },
+  {
     id: 'text2sql_bi',
     labelVi: 'Chuyên gia Text-to-SQL & Báo cáo BI',
     labelEn: 'Text-to-SQL & BI Data Analyst',
@@ -140,6 +150,8 @@ function getNodeIcon(componentName: string) {
       return <GitBranch className="size-4 text-amber-500" />;
     case 'Agent':
       return <Bot className="size-4 text-purple-500" />;
+    case 'Crawler':
+      return <Globe className="size-4 text-emerald-500" />;
     case 'Parser':
     case 'TokenChunker':
     case 'TitleChunker':

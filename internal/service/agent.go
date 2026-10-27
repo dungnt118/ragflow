@@ -1300,6 +1300,11 @@ func (s *AgentService) DeleteAgent(ctx context.Context, userID, canvasID string)
 		return fmt.Errorf("check agent deletion permission: %w", err)
 	}
 	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if tx.Migrator().HasTable(&entity.ChatChannel{}) {
+			if err := tx.Model(&entity.ChatChannel{}).Where("agent_id = ?", canvasID).Update("agent_id", nil).Error; err != nil {
+				return fmt.Errorf("delete agent: unlink chat channels: %w", err)
+			}
+		}
 		if _, err := s.versionDAO.DeleteByCanvasIDTx(ctx, tx, canvasID); err != nil {
 			return fmt.Errorf("delete agent: cascade versions: %w", err)
 		}

@@ -570,6 +570,9 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 	if err := removeIDs("chat channels", &entity.ChatChannel{}, "chat_id", chatIDs); err != nil {
 		return err
 	}
+	if err := removeIDs("chat channels", &entity.ChatChannel{}, "agent_id", canvasIDs); err != nil {
+		return err
+	}
 	if err := removeIDs("chats", &entity.Chat{}, "id", chatIDs); err != nil {
 		return err
 	}

@@ -39,7 +39,7 @@ import {
   IDataSourceLog,
 } from './interface';
 
-const DataSourceKeys = {
+export const DataSourceKeys = {
   list: (tenantId?: string) =>
     tenantId
       ? (['data-source', tenantId] as const)
@@ -126,13 +126,14 @@ export const useAddDataSource = ({ isEdit = false }: { isEdit?: boolean }) => {
   const queryClient = useQueryClient();
 
   const handleAddOk = useCallback(
-    async (data: any) => {
+    async (data: any, options?: { reschedule?: boolean }) => {
       setAddLoading(true);
       try {
+        const reschedule = options?.reschedule ?? true;
         const { data: res } = isEdit
           ? await dataSourceUpdate(data.id, {
               ...data,
-              reschedule: true,
+              reschedule,
             })
           : await dataSourceService.dataSourceSet(data);
         if (res.code === 0) {

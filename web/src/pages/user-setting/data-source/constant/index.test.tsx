@@ -81,6 +81,7 @@ describe('Sitemap data source', () => {
     expect(defaults).toEqual({
       name: '',
       source: 'sitemap',
+      refresh_freq: 360,
       config: {
         sitemap_url: '',
         url_filter: '',
@@ -131,6 +132,7 @@ describe('Web Crawler data source', () => {
     expect(defaults).toEqual({
       name: '',
       source: 'web_crawler',
+      refresh_freq: 360,
       config: {
         start_url: '',
         crawl_mode: 'auto',
@@ -403,12 +405,12 @@ describe('GitHub data source folder sync & CI/CD workflow guide', () => {
     const folderPath = fields.find((f) => f.name === 'config.folder_path');
 
     expect(includeCodeFiles).toBeDefined();
-    expect(branch?.shouldRender?.({ config: { include_code_files: false } })).toBe(
-      false,
-    );
-    expect(branch?.shouldRender?.({ config: { include_code_files: true } })).toBe(
-      true,
-    );
+    expect(
+      branch?.shouldRender?.({ config: { include_code_files: false } }),
+    ).toBe(false);
+    expect(
+      branch?.shouldRender?.({ config: { include_code_files: true } }),
+    ).toBe(true);
     expect(
       syncScope?.shouldRender?.({ config: { include_code_files: true } }),
     ).toBe(true);

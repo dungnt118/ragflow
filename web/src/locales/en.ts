@@ -1622,8 +1622,32 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'API version must match format like v59.0',
       // Data source detail page labels
       dataSourcePruneFreq: 'Prune Freq',
+      dataSourcePruneFreqTip:
+        'Periodic interval (in minutes) for the system to detect and purge obsolete files/pages that were deleted from the source, keeping the knowledge base in sync.',
       dataSourceRefreshFreq: 'Refresh Freq',
+      dataSourceRefreshFreqTip:
+        'Periodic interval (in minutes) to automatically poll and crawl new content. For web crawlers and websites, 360 minutes (6 hours) or more is recommended to avoid heavy load or rate-limiting on the target site.',
       dataSourceTimeoutSecs: 'Timeout Secs',
+      dataSourceTimeoutSecsTip:
+        'Maximum execution time for a synchronization task (in seconds). If crawling exceeds this duration, the task halts automatically (default: 1740s ~ 29 minutes).',
+      syncDeletedFilesTip:
+        'When enabled, documents in the knowledge base will be automatically removed if their source files or web pages are deleted or no longer accessible.',
+      fetchNow: 'Sync now',
+      fetchNowSuccess: 'Manual synchronization task triggered successfully!',
+      saveBeforeFetch:
+        'Please save configuration changes before triggering manual sync.',
+      saveChanges: 'Save changes',
+      runningTaskConflictTitle: 'Synchronization in progress',
+      runningTaskConflictDesc:
+        'A data synchronization process is currently running. How would you like to apply the modified configuration?',
+      applyNextCycleOption: 'Apply from next cycle (Recommended)',
+      applyNextCycleDesc:
+        'Keep the current process running to completion without interruption. New configuration will take effect on the next scheduled cycle.',
+      restartNowOption: 'Cancel and restart now',
+      restartNowDesc:
+        'Immediately terminate the current in-flight synchronization and start a new one with the updated configuration.',
+      conflictModalCancel: 'Cancel',
+      conflictModalConfirm: 'Confirm and apply',
       confluenceIsCloudTip:
         'Check if this is a Confluence Cloud instance, uncheck for Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:

@@ -41,14 +41,27 @@ import {
 } from '../constant';
 import { GithubWorkflowGuideModal } from '../component/github-workflow-guide-modal';
 import {
+  DataSourceKeys,
   useAddDataSource,
   useFetchDataSourceDetail,
   useTestDataSource,
   useUpdateDataSourceStatus,
 } from '../hooks';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { DataSourceLogsTable } from './log-table';
 import BackButton from '@/components/back-button';
-import { FileCode2 } from 'lucide-react';
+import message from '@/components/ui/message';
+import { dataSourceUpdate } from '@/services/data-source-service';
+import { useQueryClient } from '@tanstack/react-query';
+import { AlertCircle, FileCode2, RotateCw } from 'lucide-react';
 
 const SourceDetailPage = () => {
   const { t } = useTranslation();
@@ -85,6 +98,7 @@ const SourceDetailPage = () => {
         name: 'prune_freq',
         type: FormFieldType.Number,
         required: false,
+        tooltip: t('setting.dataSourcePruneFreqTip'),
         shouldRender: (values: any) => !!values?.config?.sync_deleted_files,
         render: (fieldProps: FormFieldConfig) => {
           return (
@@ -105,6 +119,7 @@ const SourceDetailPage = () => {
         name: 'refresh_freq',
         type: FormFieldType.Number,
         required: false,
+        tooltip: t('setting.dataSourceRefreshFreqTip'),
         render: (fieldProps: FormFieldConfig) => (
           <Input
             {...fieldProps}
@@ -122,6 +137,7 @@ const SourceDetailPage = () => {
         name: 'timeout_secs',
         type: FormFieldType.Number,
         required: false,
+        tooltip: t('setting.dataSourceTimeoutSecsTip'),
         render: (fieldProps: FormFieldConfig) => (
           <div className="flex items-center gap-1 w-full relative">
             <div className="flex-1">
@@ -164,14 +180,58 @@ const SourceDetailPage = () => {
     if (!detail) {
       return {};
     }
-    return mergeDataSourceFormValues(
+    const isCrawler =
+      detail.source === DataSourceKey.WEB_CRAWLER ||
+      detail.source === DataSourceKey.SITEMAP;
+
+    const merged = mergeDataSourceFormValues(
       DataSourceFormDefaultValues[
         detail.source as keyof typeof DataSourceFormDefaultValues
       ] as FieldValues,
       getCommonExtraDefaultValues(),
       detail as FieldValues,
     );
+
+    if (isCrawler && (!merged.refresh_freq || merged.refresh_freq === 5)) {
+      merged.refresh_freq = 360;
+    }
+
+    return merged;
   }, [detail]);
+
+  const queryClient = useQueryClient();
+  const [fetchLoading, setFetchLoading] = useState(false);
+
+  const handleManualFetch = useCallback(async () => {
+    if (!connectorId) return;
+    if (isDirty) {
+      message.warning(t('setting.saveBeforeFetch'));
+      return;
+    }
+    setFetchLoading(true);
+    try {
+      const { data } = await dataSourceUpdate(connectorId, {
+        reschedule: true,
+        status: RunningStatus.SCHEDULE,
+      });
+      if (data.code === 0) {
+        message.success(t('setting.fetchNowSuccess'));
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: DataSourceKeys.detail(connectorId),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: DataSourceKeys.logsPrefix(connectorId),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: DataSourceKeys.list(),
+          }),
+        ]);
+      }
+    } finally {
+      setFetchLoading(false);
+    }
+  }, [connectorId, isDirty, queryClient, t]);
 
   const { addLoading, handleAddOk } = useAddDataSource({ isEdit: true });
   const { loading: testLoading, handleTest } = useTestDataSource(
@@ -180,14 +240,16 @@ const SourceDetailPage = () => {
     fields,
   );
 
-  const onSubmit = useCallback(() => {
-    formRef?.current?.submit();
-  }, []);
+  const [conflictModalOpen, setConflictModalOpen] = useState(false);
+  const [conflictApplyMode, setConflictApplyMode] = useState<
+    'next_cycle' | 'restart_now'
+  >('next_cycle');
+  const pendingRescheduleRef = useRef<boolean>(true);
 
-  const isUnstarted = useMemo(
+  const isConnectorRunning = useMemo(
     () =>
-      detail?.status === RunningStatus.UNSTART ||
-      detail?.status === RunningStatusOld.UNSTART,
+      detail?.status === RunningStatus.RUNNING ||
+      detail?.status === RunningStatusOld.RUNNING,
     [detail?.status],
   );
 
@@ -200,37 +262,33 @@ const SourceDetailPage = () => {
     [detail?.status],
   );
 
-  const actionMode = useMemo(() => {
-    if (isDirty) {
-      return 'save' as const;
-    }
-
-    if (isUnstarted) {
-      return 'save' as const;
-    }
-
-    if (isConnectorActive) {
-      return 'stop' as const;
-    }
-
-    return 'resume' as const;
-  }, [isConnectorActive, isDirty, isUnstarted]);
-
-  const handlePrimaryAction = useCallback(() => {
-    if (actionMode === 'save') {
-      onSubmit();
+  const handleSaveClick = useCallback(async () => {
+    if (!formRef.current) return;
+    const isValid = await formRef.current.trigger?.();
+    if (isValid === false) {
+      formRef.current.submit();
       return;
     }
-    updateStatus(
-      actionMode === 'resume' ? RunningStatus.SCHEDULE : RunningStatus.CANCEL,
-    );
-  }, [actionMode, onSubmit, updateStatus]);
+    if (isConnectorRunning) {
+      setConflictApplyMode('next_cycle');
+      setConflictModalOpen(true);
+      return;
+    }
+    pendingRescheduleRef.current = true;
+    formRef.current.submit();
+  }, [isConnectorRunning]);
 
-  const primaryActionLabel = useMemo(() => {
-    if (actionMode === 'stop') return t('common.stop');
-    if (actionMode === 'resume') return t('common.resume');
-    return t('common.save');
-  }, [actionMode, t]);
+  const handleConfirmConflictSave = useCallback(() => {
+    setConflictModalOpen(false);
+    pendingRescheduleRef.current = conflictApplyMode === 'restart_now';
+    formRef.current?.submit();
+  }, [conflictApplyMode]);
+
+  const handleToggleProcess = useCallback(() => {
+    updateStatus(
+      isConnectorActive ? RunningStatus.CANCEL : RunningStatus.SCHEDULE,
+    );
+  }, [isConnectorActive, updateStatus]);
 
   useEffect(() => {
     setIsDirty(false);
@@ -278,7 +336,9 @@ const SourceDetailPage = () => {
             <DynamicForm.Root
               ref={formRef}
               fields={fields}
-              onSubmit={(data) => handleAddOk(data)}
+              onSubmit={(data) =>
+                handleAddOk(data, { reschedule: pendingRescheduleRef.current })
+              }
               defaultValues={defaultValues}
             />
           </div>
@@ -305,14 +365,33 @@ const SourceDetailPage = () => {
             </Button>
             <Button
               type="button"
-              onClick={handlePrimaryAction}
-              disabled={addLoading || statusUpdateLoading}
-              loading={
-                (addLoading && actionMode === 'save') ||
-                (statusUpdateLoading && actionMode !== 'save')
-              }
+              variant="outline"
+              onClick={handleManualFetch}
+              disabled={fetchLoading || addLoading || statusUpdateLoading}
+              loading={fetchLoading}
+              className="gap-1.5"
             >
-              {primaryActionLabel}
+              <RotateCw className="size-4" />
+              {t('setting.fetchNow')}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleToggleProcess}
+              disabled={statusUpdateLoading || addLoading || fetchLoading}
+              loading={statusUpdateLoading}
+            >
+              {isConnectorActive ? t('common.stop') : t('common.resume')}
+            </Button>
+            <Button
+              type="button"
+              onClick={handleSaveClick}
+              disabled={
+                !isDirty || addLoading || statusUpdateLoading || fetchLoading
+              }
+              loading={addLoading}
+            >
+              {t('setting.saveChanges')}
             </Button>
           </div>
           <section className="flex flex-col gap-2">
@@ -344,6 +423,82 @@ const SourceDetailPage = () => {
           }
         />
       )}
+      <Dialog open={conflictModalOpen} onOpenChange={setConflictModalOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <AlertCircle className="size-5 text-state-warning" />
+              {t('setting.runningTaskConflictTitle')}
+            </DialogTitle>
+            <DialogDescription className="pt-2 text-text-secondary">
+              {t('setting.runningTaskConflictDesc')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-3">
+            <RadioGroup
+              value={conflictApplyMode}
+              onValueChange={(val) =>
+                setConflictApplyMode(val as 'next_cycle' | 'restart_now')
+              }
+              className="gap-4"
+            >
+              <label
+                htmlFor="apply-next-cycle"
+                className="flex items-start gap-3 p-3 rounded-lg border border-border-button hover:border-border-default cursor-pointer transition-colors bg-bg-component/50"
+              >
+                <RadioGroupItem
+                  value="next_cycle"
+                  id="apply-next-cycle"
+                  className="mt-1"
+                />
+                <div className="flex flex-col gap-1">
+                  <span className="font-medium text-text-primary text-sm">
+                    {t('setting.applyNextCycleOption')}
+                  </span>
+                  <span className="text-xs text-text-secondary leading-relaxed">
+                    {t('setting.applyNextCycleDesc')}
+                  </span>
+                </div>
+              </label>
+
+              <label
+                htmlFor="restart-now"
+                className="flex items-start gap-3 p-3 rounded-lg border border-border-button hover:border-border-default cursor-pointer transition-colors bg-bg-component/50"
+              >
+                <RadioGroupItem
+                  value="restart_now"
+                  id="restart-now"
+                  className="mt-1"
+                />
+                <div className="flex flex-col gap-1">
+                  <span className="font-medium text-text-primary text-sm">
+                    {t('setting.restartNowOption')}
+                  </span>
+                  <span className="text-xs text-text-secondary leading-relaxed">
+                    {t('setting.restartNowDesc')}
+                  </span>
+                </div>
+              </label>
+            </RadioGroup>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setConflictModalOpen(false)}
+            >
+              {t('setting.conflictModalCancel')}
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirmConflictSave}
+              loading={addLoading}
+            >
+              {t('setting.conflictModalConfirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

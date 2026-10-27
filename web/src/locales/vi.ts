@@ -869,6 +869,33 @@ export default {
         'Thời gian nghỉ (tính bằng mili-giây) giữa 2 lần tải trang liên tiếp để tránh làm quá tải máy chủ đích hoặc bị chặn Rate-Limit (mặc định: 100ms).',
       searchDataSource: 'Tìm kiếm nguồn dữ liệu...',
       noDataSourceFound: 'Không tìm thấy nguồn dữ liệu phù hợp',
+      dataSourcePruneFreq: 'Chu kỳ dọn dẹp (Prune Freq)',
+      dataSourcePruneFreqTip:
+        'Khoảng thời gian định kỳ (tính bằng phút) để hệ thống tự động kiểm tra và dọn dẹp các tệp/bài viết đã bị xóa trên nguồn gốc. Giúp đồng bộ hóa trạng thái tài liệu và giữ cơ sở tri thức luôn sạch sẽ.',
+      dataSourceRefreshFreq: 'Chu kỳ làm mới (Refresh Freq)',
+      dataSourceRefreshFreqTip:
+        'Khoảng thời gian định kỳ (tính bằng phút) để hệ thống tự động kiểm tra và quét nội dung mới. Đối với Web Crawler và Website, nên đặt từ 360 phút (6 tiếng) trở lên để tránh gửi yêu cầu liên tục làm nghẽn mạng hoặc quá tải máy chủ đích.',
+      dataSourceTimeoutSecs: 'Thời gian chờ tối đa (Timeout Secs)',
+      dataSourceTimeoutSecsTip:
+        'Thời gian chạy tối đa cho một phiên quét đồng bộ (tính bằng giây). Nếu phiên thu thập vượt quá giới hạn này, tiến trình sẽ tự động dừng để giải phóng tài nguyên hệ thống (mặc định: 1740 giây ~ 29 phút).',
+      syncDeletedFiles: 'Đồng bộ tệp đã xóa',
+      syncDeletedFilesTip:
+        'Khi bật, hệ thống sẽ tự động xóa các tài liệu trong cơ sở tri thức nếu bài viết hoặc tệp tương ứng trên website/nguồn gốc bị xóa hoặc không còn tồn tại.',
+      fetchNow: 'Đồng bộ ngay',
+      fetchNowSuccess: 'Đã kích hoạt tác vụ đồng bộ thành công!',
+      saveBeforeFetch: 'Vui lòng lưu cấu hình trước khi đồng bộ thủ công.',
+      saveChanges: 'Lưu thay đổi',
+      runningTaskConflictTitle: 'Tiến trình đồng bộ đang hoạt động',
+      runningTaskConflictDesc:
+        'Hệ thống phát hiện đang có tiến trình đồng bộ dữ liệu đang chạy. Bạn muốn áp dụng cấu hình vừa chỉnh sửa như thế nào?',
+      applyNextCycleOption: 'Áp dụng từ chu kỳ tiếp theo (Khuyên dùng)',
+      applyNextCycleDesc:
+        'Giữ nguyên tiến trình hiện tại để hoàn thành nốt công việc, không bị gián đoạn hay mất dữ liệu. Cấu hình mới sẽ có hiệu lực từ chu kỳ quét kế tiếp.',
+      restartNowOption: 'Hủy và khởi động lại ngay',
+      restartNowDesc:
+        'Dừng ngay chu kỳ đồng bộ đang chạy dở và bắt đầu chu kỳ quét mới ngay lập tức với cấu hình mới.',
+      conflictModalCancel: 'Hủy bỏ',
+      conflictModalConfirm: 'Xác nhận áp dụng',
     },
     message: {
       registered: 'Đã đăng ký!',

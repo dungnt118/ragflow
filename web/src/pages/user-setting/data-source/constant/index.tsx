@@ -506,6 +506,7 @@ export const getCommonExtraFields = (t: TFunction, source?: DataSourceKey) => [
     type: FormFieldType.Checkbox,
     required: false,
     defaultValue: false,
+    tooltip: t('setting.syncDeletedFilesTip'),
     shouldRender: () => isDataSourceFeatureVisible(source, 'syncDeletedFiles'),
   },
 ];
@@ -2322,6 +2323,7 @@ export const DataSourceFormDefaultValues = {
   [DataSourceKey.SITEMAP]: {
     name: '',
     source: DataSourceKey.SITEMAP,
+    refresh_freq: 360,
     config: {
       sitemap_url: '',
       url_filter: '',
@@ -2334,6 +2336,7 @@ export const DataSourceFormDefaultValues = {
   [DataSourceKey.WEB_CRAWLER]: {
     name: '',
     source: DataSourceKey.WEB_CRAWLER,
+    refresh_freq: 360,
     config: {
       start_url: '',
       crawl_mode: 'auto',

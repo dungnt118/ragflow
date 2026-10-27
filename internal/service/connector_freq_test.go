@@ -69,4 +69,32 @@ func TestUpdateConnectorRejectsNonPositiveFreq(t *testing.T) {
 	}
 }
 
+func TestCreateConnectorDefaultFreq(t *testing.T) {
+	setupFreqValidationConnector(t)
+	svc := NewConnectorService()
+
+	tests := []struct {
+		source      string
+		wantRefresh int64
+	}{
+		{source: "web_crawler", wantRefresh: 360},
+		{source: "sitemap", wantRefresh: 360},
+		{source: "rss", wantRefresh: 5},
+	}
+
+	for _, tc := range tests {
+		conn, err := svc.CreateConnector(t.Context(), "user-1", &CreateConnectorRequest{
+			Name:   "test-" + tc.source,
+			Source: tc.source,
+			Config: entity.JSONMap{},
+		})
+		if err != nil {
+			t.Fatalf("CreateConnector(%s) failed: %v", tc.source, err)
+		}
+		if conn.RefreshFreq != tc.wantRefresh {
+			t.Errorf("CreateConnector(%s).RefreshFreq = %d, want %d", tc.source, conn.RefreshFreq, tc.wantRefresh)
+		}
+	}
+}
+
 func int64Ptr(v int64) *int64 { return &v }

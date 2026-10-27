@@ -753,6 +753,43 @@ export default {
         'Nếu nhà cung cấp mô hình của bạn không có trong danh sách nhưng tuyên bố tương thích với "OpenAI", hãy chọn thẻ OpenAI-API-compatible để thêm mô hình liên quan.',
       dingtalkAITableDescription:
         'Kết nối với Dingtalk AI Table và đồng bộ hóa bản ghi từ một bảng được chỉ định.',
+      githubDescription:
+        'Kết nối GitHub để đồng bộ thư mục tài liệu, mã nguồn, Pull Requests và Issues phục vụ truy xuất.',
+      dataSourceIncludeDocsAndCodeFiles:
+        'Bao gồm Tệp trong Repository (Tài liệu / Mã nguồn)',
+      dataSourceFieldBranch: 'Nhánh (Branch)',
+      dataSourceFieldBranchTip:
+        'Nhánh cần đồng bộ tệp (ví dụ: main). Để trống để dùng nhánh mặc định của repository.',
+      dataSourceOptionEntireRepository: 'Toàn bộ Repository',
+      dataSourceOptionSpecificFolder: 'Thư mục chỉ định',
+      dataSourceFieldFolderPath: 'Đường dẫn thư mục (Folder Path)',
+      dataSourceFieldFolderPathTip:
+        'Đường dẫn thư mục tương đối trong repository cần đồng bộ đệ quy (ví dụ: docs hoặc docs/api). Mọi tệp sẽ tự động được gắn meta_fields.web_url trỏ tới GitHub và tự động lập chỉ mục khi liên kết Dataset.',
+      dataSourceGithubSyncScopeTip:
+        'Chọn "Thư mục chỉ định" để chỉ đồng bộ một thư mục cụ thể (như docs/) hoặc "Toàn bộ Repository" để đồng bộ toàn bộ tệp tài liệu/mã nguồn hợp lệ trong repository.',
+      dataSourceGithubAtLeastOneSourceRequired:
+        'Vui lòng bật ít nhất một trong: Pull Requests, Issues, hoặc Tệp trong Repository.',
+      githubWorkflowGuideButton: 'Hướng dẫn GitHub Actions CI/CD',
+      githubWorkflowGuideModalTitle:
+        'Hướng dẫn tích hợp GitHub Actions CI/CD → RAGFlow API',
+      githubWorkflowGuideModalSubtitle:
+        'Sử dụng mẫu GitHub Actions Workflow bên dưới nếu bạn muốn mỗi khi push commit lên GitHub sẽ tự động đẩy tệp tài liệu qua RAGFlow REST API v1 và kích hoạt phân đoạn ngay lập tức.',
+      githubWorkflowGuideStep1Title:
+        'Bước 1: Cấu hình Repository Secrets trên GitHub',
+      githubWorkflowGuideStep1Desc:
+        'Trong repository GitHub của bạn, truy cập Settings → Secrets and variables → Actions → New repository secret và thêm 2 biến sau:',
+      githubWorkflowGuideSecretApiKeyDesc:
+        'Khóa API của RAGFlow (tạo tại mục Cài đặt người dùng → API trong RAGFlow).',
+      githubWorkflowGuideSecretDatasetIdDesc:
+        'ID của Dataset đích (lấy từ đường dẫn /dataset/files/<dataset_id>).',
+      githubWorkflowGuideStep2Title:
+        'Bước 2: Tạo tệp Workflow (.github/workflows/sync-ragflow.yml)',
+      githubWorkflowGuideStep2Desc:
+        'Đoạn mã YAML bên dưới đã được điền sẵn theo cấu hình trên form của bạn và thực hiện đồng bộ Idempotent (xóa bản ghi cũ trùng tên, tải bản mới lên và gọi API kích hoạt phân đoạn):',
+      githubWorkflowGuideCopyButton: 'Sao chép YAML Workflow',
+      githubWorkflowGuideCopied: 'Đã sao chép vào bộ nhớ tạm!',
+      githubWorkflowGuideNativeSyncNote:
+        'Mẹo: Bạn cũng có thể bật trực tiếp tùy chọn "Bao gồm Tệp trong Repository (Tài liệu / Mã nguồn)" ngay trên màn hình cấu hình này và liên kết với Dataset (bật Auto-Parse) — hệ thống sẽ tự động kéo (Pull) và lập chỉ mục thư mục chỉ định mà không cần dựng CI/CD.',
     },
     message: {
       registered: 'Đã đăng ký!',

@@ -16,6 +16,7 @@
 
 import type { TFunction } from 'i18next';
 import { FormFieldType } from '@/components/dynamic-form';
+import { buildGithubActionsWorkflowYaml } from './github-workflow-template';
 import {
   DataSourceFormDefaultValues,
   DataSourceKey,
@@ -312,5 +313,78 @@ describe.each([
     expect(DataSourceFormDefaultValues[key].config).toMatchObject({
       batch_size: 32,
     });
+  });
+});
+
+describe('GitHub data source folder sync & CI/CD workflow guide', () => {
+  it('exposes unique fields for include_code_files, branch, sync_scope, and folder_path with conditional rendering', () => {
+    const fields = getDataSourceFieldsWithExtras(
+      translate,
+      DataSourceKey.GITHUB,
+    ) as Array<{
+      name: string;
+      shouldRender?: (values: any) => boolean;
+      customValidate?: (val: any, values: any) => boolean | string;
+    }>;
+
+    const fieldNames = fields.map((f) => f.name);
+    expect(new Set(fieldNames).size).toBe(fieldNames.length);
+
+    const includeCodeFiles = fields.find(
+      (f) => f.name === 'config.include_code_files',
+    );
+    const branch = fields.find((f) => f.name === 'config.branch');
+    const syncScope = fields.find((f) => f.name === 'config.sync_scope');
+    const folderPath = fields.find((f) => f.name === 'config.folder_path');
+
+    expect(includeCodeFiles).toBeDefined();
+    expect(branch?.shouldRender?.({ config: { include_code_files: false } })).toBe(
+      false,
+    );
+    expect(branch?.shouldRender?.({ config: { include_code_files: true } })).toBe(
+      true,
+    );
+    expect(
+      syncScope?.shouldRender?.({ config: { include_code_files: true } }),
+    ).toBe(true);
+    expect(
+      folderPath?.shouldRender?.({
+        config: { include_code_files: true, sync_scope: 'repository' },
+      }),
+    ).toBe(false);
+    expect(
+      folderPath?.shouldRender?.({
+        config: { include_code_files: true, sync_scope: 'directory' },
+      }),
+    ).toBe(true);
+
+    // Folder path required when sync_scope === 'directory'
+    expect(
+      folderPath?.customValidate?.('', {
+        config: { include_code_files: true, sync_scope: 'directory' },
+      }),
+    ).toBe('setting.dataSourceValidationFieldRequired');
+    expect(
+      folderPath?.customValidate?.('docs', {
+        config: { include_code_files: true, sync_scope: 'directory' },
+      }),
+    ).toBe(true);
+  });
+
+  it('builds an idempotent GitHub Actions workflow YAML pre-filled with repo, branch, folder_path, and baseUrl', () => {
+    const yaml = buildGithubActionsWorkflowYaml({
+      repositoryOwner: 'hung2604',
+      repositoryName: 'BA-Demego',
+      branch: 'main',
+      folderPath: '/docs/',
+      baseUrl: 'https://faq.demego.vn/',
+    });
+
+    expect(yaml).toContain('Sync Docs to RAGFlow Dataset (hung2604/BA-Demego)');
+    expect(yaml).toContain('- main');
+    expect(yaml).toContain("- 'docs/**'");
+    expect(yaml).toContain("RAGFLOW_BASE_URL: 'https://faq.demego.vn'");
+    expect(yaml).toContain('/api/v1/datasets/${RAGFLOW_DATASET_ID}/documents');
+    expect(yaml).toContain('/api/v1/datasets/${RAGFLOW_DATASET_ID}/chunks');
   });
 });

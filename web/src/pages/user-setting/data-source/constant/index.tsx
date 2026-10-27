@@ -1424,6 +1424,78 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       required: false,
       defaultValue: true,
     },
+    {
+      label: t('setting.dataSourceIncludeDocsAndCodeFiles'),
+      name: 'config.include_code_files',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: false,
+      customValidate: (val: boolean, formValues: any) => {
+        const pr = !!formValues?.config?.include_pull_requests;
+        const issues = !!formValues?.config?.include_issues;
+        if (!pr && !issues && !val) {
+          return t('setting.dataSourceGithubAtLeastOneSourceRequired');
+        }
+        return true;
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldBranch'),
+      name: 'config.branch',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'main',
+      tooltip: t('setting.dataSourceFieldBranchTip'),
+      shouldRender: (formValues: any) =>
+        !!formValues?.config?.include_code_files,
+    },
+    {
+      label: t('setting.dataSourceFieldSyncScope'),
+      name: 'config.sync_scope',
+      type: FormFieldType.Select,
+      required: false,
+      defaultValue: 'repository',
+      tooltip: t('setting.dataSourceGithubSyncScopeTip'),
+      options: [
+        {
+          label: t('setting.dataSourceOptionEntireRepository'),
+          value: 'repository',
+        },
+        {
+          label: t('setting.dataSourceOptionSpecificFolder'),
+          value: 'directory',
+        },
+      ],
+      shouldRender: (formValues: any) =>
+        !!formValues?.config?.include_code_files,
+    },
+    {
+      label: t('setting.dataSourceFieldFolderPath'),
+      name: 'config.folder_path',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'docs',
+      tooltip: t('setting.dataSourceFieldFolderPathTip'),
+      shouldRender: (formValues: any) =>
+        !!formValues?.config?.include_code_files &&
+        formValues?.config?.sync_scope === 'directory',
+      customValidate: (val: string, formValues: any) => {
+        const enabled = !!formValues?.config?.include_code_files;
+        const scope = formValues?.config?.sync_scope;
+        if (enabled && scope === 'directory') {
+          const trimmed = (val || '').trim().replace(/^\/+|\/+$/g, '');
+          if (!trimmed) {
+            return t('setting.dataSourceValidationFieldRequired', {
+              label: t('setting.dataSourceFieldFolderPath'),
+            });
+          }
+          if (trimmed.split('/').some((seg) => seg === '.' || seg === '..')) {
+            return "Folder path must not contain '.' or '..'";
+          }
+        }
+        return true;
+      },
+    },
   ],
   [DataSourceKey.IMAP]: [
     {
@@ -2541,6 +2613,10 @@ export const DataSourceFormDefaultValues = {
       repository_name: '',
       include_pull_requests: true,
       include_issues: true,
+      include_code_files: false,
+      branch: 'main',
+      sync_scope: 'repository',
+      folder_path: '',
       credentials: {
         github_access_token: '',
       },

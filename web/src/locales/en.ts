@@ -1768,7 +1768,42 @@ Example: Virtual Hosted Style`,
       boxDescription: 'Connect your Box drive to sync files and folders.',
 
       githubDescription:
-        'Connect GitHub to sync pull requests and issues for retrieval.',
+        'Connect GitHub to sync repository folders, documentation files, pull requests, and issues for retrieval.',
+      dataSourceIncludeDocsAndCodeFiles:
+        'Include Repository Files (Docs / Code)',
+      dataSourceFieldBranch: 'Branch',
+      dataSourceFieldBranchTip:
+        'Target branch to sync files from (e.g., main). Leave empty to use the repository default branch.',
+      dataSourceOptionEntireRepository: 'Entire Repository',
+      dataSourceOptionSpecificFolder: 'Specific Folder',
+      dataSourceFieldFolderPath: 'Folder Path',
+      dataSourceFieldFolderPathTip:
+        'Relative folder path inside the repository to sync recursively (e.g., docs or docs/api). All files in this folder will automatically receive GitHub web_url metadata and be indexed when linked to a dataset.',
+      dataSourceGithubSyncScopeTip:
+        'Choose "Specific Folder" to sync only a designated folder (such as docs/) or "Entire Repository" to sync all supported documentation and source files across the repository.',
+      dataSourceGithubAtLeastOneSourceRequired:
+        'Enable at least one of Include Pull Requests, Include Issues, or Include Repository Files.',
+      githubWorkflowGuideButton: 'GitHub Actions CI/CD Guide',
+      githubWorkflowGuideModalTitle:
+        'GitHub Actions CI/CD → RAGFlow API Integration Guide',
+      githubWorkflowGuideModalSubtitle:
+        'Use this ready-to-run GitHub Actions workflow if you want every push on GitHub to immediately push updated files to RAGFlow REST API v1 and trigger parsing.',
+      githubWorkflowGuideStep1Title:
+        'Step 1: Configure Repository Secrets on GitHub',
+      githubWorkflowGuideStep1Desc:
+        'In your GitHub repository, navigate to Settings → Secrets and variables → Actions → New repository secret and add:',
+      githubWorkflowGuideSecretApiKeyDesc:
+        'Your RAGFlow API Key (create one under User Settings → API in RAGFlow).',
+      githubWorkflowGuideSecretDatasetIdDesc:
+        'The target Dataset ID (found in the URL /dataset/files/<dataset_id>).',
+      githubWorkflowGuideStep2Title:
+        'Step 2: Add Workflow File (.github/workflows/sync-ragflow.yml)',
+      githubWorkflowGuideStep2Desc:
+        'The workflow below is pre-filled with your current configuration and performs an idempotent sync (deletes outdated document records with the same name, uploads the latest file, and triggers chunk parsing):',
+      githubWorkflowGuideCopyButton: 'Copy Workflow YAML',
+      githubWorkflowGuideCopied: 'Copied to clipboard!',
+      githubWorkflowGuideNativeSyncNote:
+        'Tip: You can also enable "Include Repository Files (Docs / Code)" directly on this GitHub Data Source form and link it to your Dataset with Auto-Parse enabled — RAGFlow will pull and index your folder automatically without requiring CI/CD.',
       airtableDescription:
         'Connect to Airtable and synchronize files from a specified table within a designated workspace.',
       dingtalkAITableDescription:

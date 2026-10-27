@@ -105,7 +105,7 @@ export function Sidebar({ selection, onSelect }: SidebarProps) {
       >
         <span className="flex items-center gap-2 font-medium">
           <BarChart3 className="size-4" />
-          Báo cáo Token & Dự báo Chi phí
+          AI Token & Chi phí
         </span>
         <ChevronRight className="size-4" />
       </button>

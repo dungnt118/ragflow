@@ -635,22 +635,20 @@ const TokenCostDashboardPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setCurrency('USD')}
-              className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
-                currency === 'USD'
+              className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${currency === 'USD'
                   ? 'bg-bg-card text-text-primary shadow-sm'
                   : 'text-text-secondary hover:text-text-primary'
-              }`}
+                }`}
             >
               USD ($)
             </button>
             <button
               type="button"
               onClick={() => setCurrency('VND')}
-              className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
-                currency === 'VND'
+              className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${currency === 'VND'
                   ? 'bg-bg-card text-text-primary shadow-sm'
                   : 'text-text-secondary hover:text-text-primary'
-              }`}
+                }`}
             >
               VNĐ (₫)
             </button>
@@ -967,13 +965,12 @@ const TokenCostDashboardPage: React.FC = () => {
               </div>
               <div className="w-full h-1.5 bg-bg-input rounded-full overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all ${
-                    kpi?.budget_status === 'exceeded'
+                  className={`h-full rounded-full transition-all ${kpi?.budget_status === 'exceeded'
                       ? 'bg-red-500'
                       : kpi?.budget_status === 'warning'
                         ? 'bg-amber-500'
                         : 'bg-emerald-500'
-                  }`}
+                    }`}
                   style={{
                     width: `${Math.min(100, kpi?.budget_utilization_pct || 0)}%`,
                   }}
@@ -1117,11 +1114,10 @@ const TokenCostDashboardPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setChartScaleMode('detail')}
-                    className={`px-2.5 py-1 text-xs rounded transition-colors ${
-                      chartScaleMode === 'detail'
+                    className={`px-2.5 py-1 text-xs rounded transition-colors ${chartScaleMode === 'detail'
                         ? 'bg-bg-card text-emerald-400 font-semibold shadow-sm'
                         : 'text-text-secondary hover:text-text-primary'
-                    }`}
+                      }`}
                     title="Thu phóng chi tiết để thấy rõ biến động của chi phí thực tế và đường cong dự báo"
                   >
                     🔍 Phóng to chi tiết
@@ -1129,11 +1125,10 @@ const TokenCostDashboardPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setChartScaleMode('budget')}
-                    className={`px-2.5 py-1 text-xs rounded transition-colors ${
-                      chartScaleMode === 'budget'
+                    className={`px-2.5 py-1 text-xs rounded transition-colors ${chartScaleMode === 'budget'
                         ? 'bg-bg-card text-red-400 font-semibold shadow-sm'
                         : 'text-text-secondary hover:text-text-primary'
-                    }`}
+                      }`}
                     title="Hiển thị toàn cảnh trần ngân sách"
                   >
                     📊 Toàn cảnh ngân sách
@@ -1144,22 +1139,20 @@ const TokenCostDashboardPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setChartMode('daily')}
-                  className={`px-2.5 py-1 text-xs rounded ${
-                    chartMode === 'daily'
+                  className={`px-2.5 py-1 text-xs rounded ${chartMode === 'daily'
                       ? 'bg-bg-card text-text-primary font-medium'
                       : 'text-text-secondary'
-                  }`}
+                    }`}
                 >
                   Theo Ngày ({selectedMonth})
                 </button>
                 <button
                   type="button"
                   onClick={() => setChartMode('monthly')}
-                  className={`px-2.5 py-1 text-xs rounded ${
-                    chartMode === 'monthly'
+                  className={`px-2.5 py-1 text-xs rounded ${chartMode === 'monthly'
                       ? 'bg-bg-card text-text-primary font-medium'
                       : 'text-text-secondary'
-                  }`}
+                    }`}
                 >
                   Xu hướng 6 Tháng & Tháng tới
                 </button>
@@ -1406,11 +1399,10 @@ const TokenCostDashboardPage: React.FC = () => {
                       </div>
                       <div className="flex-1 h-5 bg-bg-input rounded overflow-hidden relative">
                         <div
-                          className={`h-full transition-all ${
-                            m.is_forecast
+                          className={`h-full transition-all ${m.is_forecast
                               ? 'bg-sky-500/70 border-r-2 border-dashed border-sky-300'
                               : 'bg-emerald-500/80'
-                          }`}
+                            }`}
                           style={{ width: `${Math.max(pct, 2)}%` }}
                         />
                       </div>
@@ -1520,11 +1512,10 @@ const TokenCostDashboardPage: React.FC = () => {
                 type="button"
                 onClick={() => setActiveTab('providers')}
                 data-testid="tab-provider-breakdown"
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                  activeTab === 'providers'
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === 'providers'
                     ? 'bg-accent-primary text-white'
                     : 'bg-bg-input text-text-secondary hover:text-text-primary'
-                }`}
+                  }`}
               >
                 Theo LLM Provider ({providers.length})
               </button>
@@ -1532,11 +1523,10 @@ const TokenCostDashboardPage: React.FC = () => {
                 type="button"
                 onClick={() => setActiveTab('models')}
                 data-testid="tab-model-breakdown"
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                  activeTab === 'models'
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === 'models'
                     ? 'bg-accent-primary text-white'
                     : 'bg-bg-input text-text-secondary hover:text-text-primary'
-                }`}
+                  }`}
               >
                 Theo từng Model & Đơn giá ({models.length})
               </button>
@@ -1544,11 +1534,10 @@ const TokenCostDashboardPage: React.FC = () => {
                 type="button"
                 onClick={() => setActiveTab('apps')}
                 data-testid="tab-app-breakdown"
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                  activeTab === 'apps'
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === 'apps'
                     ? 'bg-accent-primary text-white'
                     : 'bg-bg-input text-text-secondary hover:text-text-primary'
-                }`}
+                  }`}
               >
                 Theo Chat Assistant / Agent ({apps.length})
               </button>
@@ -1556,11 +1545,10 @@ const TokenCostDashboardPage: React.FC = () => {
                 type="button"
                 onClick={() => setActiveTab('logs')}
                 data-testid="tab-usage-logs"
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                  activeTab === 'logs'
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === 'logs'
                     ? 'bg-accent-primary text-white'
                     : 'bg-bg-input text-text-secondary hover:text-text-primary'
-                }`}
+                  }`}
               >
                 Sổ cái Chi tiết Lượt gọi ({formatNumber(logsTotal)})
               </button>
@@ -2125,7 +2113,7 @@ const TokenCostDashboardPage: React.FC = () => {
       <Modal
         open={apiModalOpen}
         onOpenChange={setApiModalOpen}
-        title="Tài Liệu REST API Báo Cáo Token & Dự Báo Chi Phí (Bên Thứ 3)"
+        title="Tài Liệu REST API Báo Cáo Token & Dự Báo Chi Phí"
         className="max-w-2xl"
         showfooter={false}
       >

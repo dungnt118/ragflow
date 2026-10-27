@@ -193,7 +193,8 @@ export default {
     knowledgeConfiguration: {
       parsingMode: 'Chế độ phân tích',
       builtInSuffix: ' (dựng sẵn)',
-      builtInPipelines: 'Quy trình xử lý tài liệu dựng sẵn (Built-in Pipelines)',
+      builtInPipelines:
+        'Quy trình xử lý tài liệu dựng sẵn (Built-in Pipelines)',
       imageTableContextWindow: 'Cửa sổ ngữ cảnh hình ảnh & bảng',
       imageTableContextWindowTip:
         'Trích xuất N token văn bản phía trên và phía dưới hình ảnh và bảng để cung cấp bối cảnh phong phú hơn.',
@@ -866,6 +867,8 @@ export default {
       webCrawlerCrawlDelayMs: 'Độ trễ giữa các lần tải trang (ms)',
       webCrawlerCrawlDelayMsTip:
         'Thời gian nghỉ (tính bằng mili-giây) giữa 2 lần tải trang liên tiếp để tránh làm quá tải máy chủ đích hoặc bị chặn Rate-Limit (mặc định: 100ms).',
+      searchDataSource: 'Tìm kiếm nguồn dữ liệu...',
+      noDataSourceFound: 'Không tìm thấy nguồn dữ liệu phù hợp',
     },
     message: {
       registered: 'Đã đăng ký!',
@@ -1414,7 +1417,8 @@ export default {
       aiPromptLabel: 'Mô tả bài toán hoặc quy trình bạn muốn xây dựng',
       aiPromptPlaceholder:
         'Ví dụ: Xây dựng trợ lý CSKH tự động phân loại câu hỏi kỹ thuật và khiếu nại đơn hàng. Nếu là câu hỏi kỹ thuật thì tra cứu Dataset hướng dẫn sử dụng để trả lời; nếu là khiếu nại thì gửi email cảnh báo cho bộ phận quản lý...',
-      aiPromptRequired: 'Vui lòng nhập mô tả nhu cầu của bạn (ít nhất 10 ký tự)',
+      aiPromptRequired:
+        'Vui lòng nhập mô tả nhu cầu của bạn (ít nhất 10 ký tự)',
       aiCategoryLabel: 'Loại luồng mục tiêu',
       aiCategoryAuto: 'Tự động nhận diện (AI quyết định)',
       aiCategoryAgent: 'Agent Workflow (Chat / Tác vụ thông minh / Đa công cụ)',
@@ -1422,7 +1426,8 @@ export default {
       aiQuickPromptsLabel: 'Gợi ý kịch bản mẫu (Nhấp để điền nhanh)',
       aiGeneratePreviewBtn: 'Phân tích & Xem trước Kiến trúc',
       aiDirectCreateBtn: 'Tạo & Mở ngay (1-Click)',
-      aiGeneratingText: 'AI Brain đang thiết kế kiến trúc Node & kết nối DSL...',
+      aiGeneratingText:
+        'AI Brain đang thiết kế kiến trúc Node & kết nối DSL...',
       aiCreatingText: 'Đang khởi tạo và mở Canvas...',
       aiPreviewSectionTitle: 'Kiến trúc đề xuất bởi AI Brain',
       aiPreviewNodesCount: '{{count}} Action Nodes được cấu hình tự động',

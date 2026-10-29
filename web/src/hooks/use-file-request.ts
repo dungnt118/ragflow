@@ -26,7 +26,9 @@ import {
   ConnectFileToKnowledgeMode,
   IConnectRequestBody,
 } from '@/interfaces/request/file-manager';
-import fileManagerService from '@/services/file-manager-service';
+import fileManagerService, {
+  downloadBatchFiles,
+} from '@/services/file-manager-service';
 import api from '@/utils/api';
 import { downloadFileFromBlob } from '@/utils/file-util';
 import { markListItemsDeleted } from '@/utils/list-deletion-util';
@@ -55,6 +57,7 @@ export const enum FileApiAction {
   FetchParentFolderList = 'fetchParentFolderList',
   DeleteFile = 'deleteFile',
   DownloadFile = 'downloadFile',
+  BatchDownloadFile = 'batchDownloadFile',
   RenameFile = 'renameFile',
   ConnectFileToKnowledge = 'connectFileToKnowledge',
   FetchPureFileList = 'fetchPureFileList',
@@ -306,11 +309,47 @@ export const useDownloadFile = () => {
     mutationKey: [FileApiAction.DownloadFile],
     mutationFn: async (params: { id: string; filename?: string }) => {
       const response = await fileManagerService.getFile({}, params.id);
+      if (response?.data?.type === 'application/json') {
+        const text = await response.data.text();
+        const errPayload = JSON.parse(text);
+        if (errPayload?.code && errPayload.code !== 0) {
+          message.error(errPayload.message || 'Download failed');
+          return;
+        }
+      }
       const blob = new Blob([response.data], { type: response.data.type });
       downloadFileFromBlob(blob, params.filename);
     },
   });
   return { data, loading, downloadFile: mutateAsync };
+};
+
+export const useBatchDownloadFile = () => {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [FileApiAction.BatchDownloadFile],
+    mutationFn: async (params: { ids: string[]; filename?: string }) => {
+      const response = await downloadBatchFiles({
+        ids: params.ids,
+      });
+      if (response?.data?.type === 'application/json') {
+        const text = await response.data.text();
+        const errPayload = JSON.parse(text);
+        if (errPayload?.code && errPayload.code !== 0) {
+          message.error(errPayload.message || 'Download failed');
+          return;
+        }
+      }
+      const blob = new Blob([response.data], {
+        type: response.data.type || 'application/zip',
+      });
+      downloadFileFromBlob(blob, params.filename || 'files.zip');
+    },
+  });
+  return { data, loading, batchDownloadFile: mutateAsync };
 };
 
 export const useRenameFile = () => {

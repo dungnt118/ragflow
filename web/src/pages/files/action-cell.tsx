@@ -30,7 +30,12 @@ import {
 } from './hooks';
 import { useHandleDeleteFile } from './use-delete-file';
 import { UseMoveDocumentShowType } from './use-move-file';
-import { isFolderType, isKnowledgeBaseType } from './util';
+import {
+  confirmLargeDownloadIfNeeded,
+  isFolderType,
+  isKnowledgeBaseType,
+  normalizeArchiveFilename,
+} from './util';
 
 type IProps = Pick<CellContext<IFile, unknown>, 'row'> &
   Pick<UseHandleConnectToKnowledgeReturnType, 'showConnectToKnowledgeModal'> &
@@ -61,11 +66,21 @@ export function ActionCell({
   }, [record, showConnectToKnowledgeModal]);
 
   const onDownloadDocument = useCallback(() => {
-    downloadFile({
-      id: documentId,
-      filename: record.name,
-    });
-  }, [documentId, downloadFile, record.name]);
+    const filename = isFolder
+      ? normalizeArchiveFilename(record.name)
+      : record.name;
+    const executeDownload = () => {
+      downloadFile({
+        id: documentId,
+        filename,
+      });
+    };
+    if (isFolder) {
+      confirmLargeDownloadIfNeeded(record.size || 0, t, executeDownload);
+      return;
+    }
+    executeDownload();
+  }, [documentId, downloadFile, isFolder, record.name, record.size]);
 
   const handleShowFileRenameModal = useCallback(() => {
     showFileRenameModal(record);
@@ -126,16 +141,14 @@ export function ActionCell({
           <FolderPen />
         </Button>
       )}
-      {isFolder || (
-        <Button
-          variant="transparent"
-          className="border-none hover:bg-bg-card text-text-primary"
-          size="icon-sm"
-          onClick={onDownloadDocument}
-        >
-          <ArrowDownToLine />
-        </Button>
-      )}
+      <Button
+        variant="transparent"
+        className="border-none hover:bg-bg-card text-text-primary"
+        size="icon-sm"
+        onClick={onDownloadDocument}
+      >
+        <ArrowDownToLine />
+      </Button>
 
       {isSupportedPreviewDocumentType(extension) && (
         <NewDocumentLink
@@ -153,30 +166,6 @@ export function ActionCell({
           </Button>
         </NewDocumentLink>
       )}
-
-      {/* <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="transparent"
-        className="border-none" size={'sm'}>
-            <EllipsisVertical />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={handleShowMoveFileModal}>
-            {t('common.move')}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={handleShowFileRenameModal}>
-            {t('common.rename')}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          {isFolder || (
-            <DropdownMenuItem onClick={onDownloadDocument}>
-              {t('common.download')}
-            </DropdownMenuItem>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu> */}
       {isKnowledgeBase || (
         <ConfirmDeleteDialog
           onOk={onRemoveFile}

@@ -1,11 +1,16 @@
 package file
 
 import (
+	"archive/zip"
+	"bytes"
+	"io"
 	"strings"
-
-	"ragflow/internal/parser/parser"
-	"ragflow/internal/utility"
 	"testing"
+
+	"ragflow/internal/entity"
+	"ragflow/internal/parser/parser"
+	"ragflow/internal/storage"
+	"ragflow/internal/utility"
 )
 
 func TestBytesLooksLikePDF(t *testing.T) {
@@ -143,3 +148,109 @@ func TestParseFileContent_MarkdownOutputFormat(t *testing.T) {
 		t.Skip("markdown parser returned empty (integration-only)")
 	}
 }
+
+func TestDownloadArchive_FolderAndKnowledgebaseFiles(t *testing.T) {
+	db := setupFolderTestDB(t)
+	store := storage.NewMemoryStorage()
+	factory := storage.GetStorageFactory()
+	prev := factory.GetStorage()
+	factory.SetStorage(store)
+	t.Cleanup(func() { factory.SetStorage(prev) })
+
+	root := &entity.File{ID: "root", ParentID: "root", TenantID: "tenant-1", CreatedBy: "tenant-1", Name: "/", Type: FileTypeFolder}
+	kbRoot := &entity.File{ID: "kb-root", ParentID: "root", TenantID: "tenant-1", CreatedBy: "tenant-1", Name: DatasetFolderName, Type: FileTypeFolder, SourceType: FileSourceDataset}
+	dsFolder := &entity.File{ID: "ds-folder", ParentID: "kb-root", TenantID: "tenant-1", CreatedBy: "tenant-1", Name: "CMS-QLTN", Type: FileTypeFolder, SourceType: FileSourceDataset}
+	loc1 := "doc-loc-1"
+	kbFile := &entity.File{ID: "kb-file-1", ParentID: "ds-folder", TenantID: "tenant-1", CreatedBy: "tenant-1", Name: "intro.md", Type: "md", Location: &loc1, SourceType: FileSourceDataset}
+	docID := "doc-1"
+	docName := "intro.md"
+	doc := &entity.Document{ID: docID, KbID: "kb-id-1", Name: &docName, Location: &loc1}
+	fileID := kbFile.ID
+	f2d := &entity.File2Document{ID: "f2d-1", FileID: &fileID, DocumentID: &docID}
+
+	for _, rec := range []any{root, kbRoot, dsFolder, kbFile, doc, f2d} {
+		if err := db.Create(rec).Error; err != nil {
+			t.Fatalf("seed record: %v", err)
+		}
+	}
+	if err := store.Put(t.Context(), "kb-id-1", loc1, []byte("# Hello Dataset")); err != nil {
+		t.Fatalf("store.Put: %v", err)
+	}
+
+	svc := testFileService()
+	zipBytes, archiveName, err := svc.DownloadArchive(t.Context(), "tenant-1", []string{"ds-folder"})
+	if err != nil {
+		t.Fatalf("DownloadArchive failed: %v", err)
+	}
+	if archiveName != "CMS-QLTN.zip" {
+		t.Fatalf("archiveName = %q, want CMS-QLTN.zip", archiveName)
+	}
+
+	zr, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
+	if err != nil {
+		t.Fatalf("zip.NewReader: %v", err)
+	}
+	if len(zr.File) != 1 {
+		t.Fatalf("zip entries = %d, want 1", len(zr.File))
+	}
+	if zr.File[0].Name != "CMS-QLTN/intro.md" {
+		t.Fatalf("entry name = %q, want CMS-QLTN/intro.md", zr.File[0].Name)
+	}
+	rc, err := zr.File[0].Open()
+	if err != nil {
+		t.Fatalf("Open zip entry: %v", err)
+	}
+	defer rc.Close()
+	body, err := io.ReadAll(rc)
+	if err != nil {
+		t.Fatalf("ReadAll zip entry: %v", err)
+	}
+	if string(body) != "# Hello Dataset" {
+		t.Fatalf("entry body = %q, want %q", string(body), "# Hello Dataset")
+	}
+}
+
+func TestDownloadArchive_MultiSelectFilesAndEmptyFolder(t *testing.T) {
+	db := setupFolderTestDB(t)
+	store := storage.NewMemoryStorage()
+	factory := storage.GetStorageFactory()
+	prev := factory.GetStorage()
+	factory.SetStorage(store)
+	t.Cleanup(func() { factory.SetStorage(prev) })
+
+	root := &entity.File{ID: "root", ParentID: "root", TenantID: "tenant-1", CreatedBy: "tenant-1", Name: "/", Type: FileTypeFolder}
+	emptyDir := &entity.File{ID: "empty-dir", ParentID: "root", TenantID: "tenant-1", CreatedBy: "tenant-1", Name: "EmptyFolder", Type: FileTypeFolder}
+	locA := "loc-a"
+	fileA := &entity.File{ID: "file-a", ParentID: "root", TenantID: "tenant-1", CreatedBy: "tenant-1", Name: "note.txt", Type: "txt", Location: &locA}
+
+	for _, rec := range []any{root, emptyDir, fileA} {
+		if err := db.Create(rec).Error; err != nil {
+			t.Fatalf("seed record: %v", err)
+		}
+	}
+	if err := store.Put(t.Context(), "root", locA, []byte("plain text")); err != nil {
+		t.Fatalf("store.Put: %v", err)
+	}
+
+	svc := testFileService()
+	zipBytes, archiveName, err := svc.DownloadArchive(t.Context(), "tenant-1", []string{"empty-dir", "file-a"})
+	if err != nil {
+		t.Fatalf("DownloadArchive failed: %v", err)
+	}
+	if archiveName != "files.zip" {
+		t.Fatalf("archiveName = %q, want files.zip", archiveName)
+	}
+
+	zr, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
+	if err != nil {
+		t.Fatalf("zip.NewReader: %v", err)
+	}
+	names := make(map[string]bool)
+	for _, f := range zr.File {
+		names[f.Name] = true
+	}
+	if !names["EmptyFolder/"] || !names["note.txt"] {
+		t.Fatalf("zip entries = %v, want EmptyFolder/ and note.txt", names)
+	}
+}
+

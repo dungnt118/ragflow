@@ -2785,6 +2785,9 @@ Example: Virtual Hosted Style`,
         'Each file must not exceed 10MB, and the total number of files must not exceed 128.',
       destinationFolder: 'Destination folder',
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
+      largeDownloadWarningTitle: 'Large download size warning',
+      largeDownloadWarningContent:
+        'The total download size ({{size}}) exceeds 15MB. Compressing and downloading may take some time. Do you want to continue?',
     },
     flow: {
       exportCurrentPage: 'Export current page',

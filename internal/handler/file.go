@@ -433,9 +433,9 @@ func (h *FileHandler) MoveFiles(c *gin.Context) {
 	common.SuccessWithData(c, true, common.CodeSuccess.Message())
 }
 
-// Download handles file download
-// @Summary Download File
-// @Description Download a file by ID
+// Download handles file or folder download
+// @Summary Download File or Folder
+// @Description Download a file by ID, or a folder as a ZIP archive
 // @Tags file
 // @Accept json
 // @Produce octet-stream
@@ -458,12 +458,23 @@ func (h *FileHandler) Download(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	// Get file metadata and check permission
-	file, err := h.fileService.GetFileContent(ctx, userID, fileID)
+	fileEntry, err := h.fileService.GetFileContent(ctx, userID, fileID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
 		common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, err.Error())
+		return
+	}
+
+	if fileEntry.Type == file.FileTypeFolder {
+		zipBytes, archiveName, err := h.fileService.DownloadArchive(ctx, userID, []string{fileID})
+		if err != nil {
+			respondFileServiceError(c, err)
+			return
+		}
+		utility.SetDownloadFileResponseHeaders(c.Writer.Header(), "application/zip", "zip", archiveName)
+		c.Data(http.StatusOK, "application/zip", zipBytes)
 		return
 	}
 
@@ -477,13 +488,12 @@ func (h *FileHandler) Download(c *gin.Context) {
 	// Try to get file blob from primary location (parent_id, location)
 	var blob []byte
 	var getErr error
-	if file.Location != nil && *file.Location != "" {
-		blob, getErr = storageImpl.Get(ctx, file.ParentID, *file.Location)
+	if fileEntry.Location != nil && *fileEntry.Location != "" {
+		blob, getErr = storageImpl.Get(ctx, fileEntry.ParentID, *fileEntry.Location)
 	}
 
 	// If blob is empty, try fallback via file2document
 	if len(blob) == 0 {
-		ctx := c.Request.Context()
 		storageAddr, err := h.fileService.GetStorageAddress(ctx, fileID)
 		if err != nil {
 			common.ResponseWithCodeData(c, common.CodeServerError, nil, "Failed to get file storage address: "+err.Error())
@@ -503,15 +513,52 @@ func (h *FileHandler) Download(c *gin.Context) {
 	}
 
 	// Extract file extension
-	ext := utility.GetFileExtension(file.Name)
+	ext := utility.GetFileExtension(fileEntry.Name)
 
 	// Determine content type based on extension and file type
-	contentType := utility.GetContentType(ext, file.Type)
+	contentType := utility.GetContentType(ext, fileEntry.Type)
 
-	utility.SetDownloadFileResponseHeaders(c.Writer.Header(), contentType, ext, file.Name)
+	utility.SetDownloadFileResponseHeaders(c.Writer.Header(), contentType, ext, fileEntry.Name)
 
 	// Send file data
 	c.Data(http.StatusOK, contentType, blob)
+}
+
+// BatchDownloadFileRequest represents the request body for batch downloading files/folders as ZIP
+type BatchDownloadFileRequest struct {
+	IDs []string `json:"ids" binding:"required,min=1"`
+}
+
+// BatchDownload packages multiple files and/or folders into a single ZIP archive
+// @Summary Batch Download Files and Folders
+// @Description Download multiple files and/or folders as a ZIP archive
+// @Tags file
+// @Accept json
+// @Produce application/zip
+// @Param body body BatchDownloadFileRequest true "file and folder IDs to download"
+// @Success 200 {file} binary "ZIP archive stream"
+// @Router /api/v1/files/download [post]
+func (h *FileHandler) BatchDownload(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
+	var req BatchDownloadFileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		return
+	}
+
+	zipBytes, archiveName, err := h.fileService.DownloadArchive(c.Request.Context(), user.ID, req.IDs)
+	if err != nil {
+		respondFileServiceError(c, err)
+		return
+	}
+
+	utility.SetDownloadFileResponseHeaders(c.Writer.Header(), "application/zip", "zip", archiveName)
+	c.Data(http.StatusOK, "application/zip", zipBytes)
 }
 
 // LinkToDatasets links files (or folder trees) to one or more datasets.

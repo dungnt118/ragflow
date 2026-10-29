@@ -338,6 +338,7 @@ export default {
   connectFileToKnowledge: `${restAPIv1}/files/link-to-datasets`,
   getFile: `${restAPIv1}/files`,
   moveFile: `${restAPIv1}/files/move`,
+  batchDownloadFile: `${restAPIv1}/files/download`,
 
   // system
   getSystemVersion: `${restAPIv1}/system/version`,

@@ -1,10 +1,14 @@
 package file
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"path"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/parser"
@@ -27,6 +31,234 @@ func (s *FileService) GetFileContent(ctx context.Context, uid, fileID string) (*
 	}
 	return file, nil
 }
+
+// ReadFileBlob retrieves raw file bytes from primary storage or via the
+// file2document mapping fallback (used by dataset-backed files).
+func (s *FileService) ReadFileBlob(ctx context.Context, storageImpl storage.Storage, f *entity.File) ([]byte, error) {
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+	if f == nil {
+		return nil, fmt.Errorf("file is nil")
+	}
+
+	var blob []byte
+	var getErr error
+	if f.Location != nil && *f.Location != "" {
+		blob, getErr = storageImpl.Get(ctx, f.ParentID, *f.Location)
+	}
+
+	if len(blob) == 0 {
+		storageAddr, err := s.GetStorageAddress(ctx, f.ID)
+		if err != nil {
+			if getErr != nil {
+				return nil, fmt.Errorf("failed to get file storage address: %w (primary error: %v)", err, getErr)
+			}
+			return nil, fmt.Errorf("failed to get file storage address: %w", err)
+		}
+		blob, getErr = storageImpl.Get(ctx, storageAddr.Bucket, storageAddr.Name)
+	}
+
+	if len(blob) == 0 && getErr != nil {
+		return nil, getErr
+	}
+	return blob, nil
+}
+
+// DownloadArchive packages one or more files and/or folders (recursively) into
+// a single ZIP archive after verifying read permissions on every entry.
+func (s *FileService) DownloadArchive(ctx context.Context, uid string, fileIDs []string) ([]byte, string, error) {
+	if len(fileIDs) == 0 {
+		return nil, "", common.NewCodedError(common.CodeParamError, "ids is required")
+	}
+
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, "", fmt.Errorf("storage not initialized")
+	}
+
+	seenRootIDs := make(map[string]struct{}, len(fileIDs))
+	roots := make([]*entity.File, 0, len(fileIDs))
+	for _, rawID := range fileIDs {
+		id := strings.TrimSpace(rawID)
+		if id == "" {
+			continue
+		}
+		if _, exists := seenRootIDs[id]; exists {
+			continue
+		}
+		seenRootIDs[id] = struct{}{}
+
+		f, err := s.fileDAO.GetByID(ctx, dao.DB, id)
+		if err != nil {
+			return nil, "", lookupError(err, "document not found")
+		}
+		if f == nil {
+			return nil, "", common.NewCodedError(common.CodeNotFound, "document not found")
+		}
+		if f.Type == FileTypeFolder && f.ID == f.ParentID && strings.EqualFold(f.Name, SkillsFolderName) {
+			return nil, "", permission.ErrPermissionDenied
+		}
+		if f.Type == FileTypeFolder {
+			if err := s.checkFileTreeAccess(ctx, uid, f, permission.OperationRead); err != nil {
+				return nil, "", err
+			}
+		} else {
+			if err := checkFileAccess(ctx, uid, f, permission.OperationRead); err != nil {
+				return nil, "", err
+			}
+		}
+		roots = append(roots, f)
+	}
+
+	if len(roots) == 0 {
+		return nil, "", common.NewCodedError(common.CodeParamError, "ids is required")
+	}
+
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	usedPaths := make(map[string]int)
+	visitedFolders := make(map[string]struct{})
+
+	var writeEntry func(f *entity.File, parentZipDir string) error
+	writeEntry = func(f *entity.File, parentZipDir string) error {
+		if f == nil || f.Type == FileTypeVirtual {
+			return nil
+		}
+
+		if f.Type == FileTypeFolder {
+			if _, visited := visitedFolders[f.ID]; visited {
+				return nil
+			}
+			visitedFolders[f.ID] = struct{}{}
+
+			folderName := sanitizeZipSegment(f.Name, "folder")
+			folderZipPath := uniqueZipPath(parentZipDir, folderName, true, usedPaths)
+
+			children, err := s.fileDAO.ListAllFilesByParentID(ctx, dao.DB, f.ID)
+			if err != nil {
+				return err
+			}
+
+			isRootFolder := f.ID == f.ParentID
+			writtenChildren := 0
+			for _, child := range children {
+				if child == nil || child.Type == FileTypeVirtual {
+					continue
+				}
+				if isRootFolder && child.Type == FileTypeFolder && strings.EqualFold(child.Name, SkillsFolderName) {
+					continue
+				}
+				if err := writeEntry(child, folderZipPath); err != nil {
+					return err
+				}
+				writtenChildren++
+			}
+
+			if writtenChildren == 0 {
+				if _, err := zw.Create(folderZipPath + "/"); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+
+		fileName := sanitizeZipSegment(f.Name, "file")
+		fileZipPath := uniqueZipPath(parentZipDir, fileName, false, usedPaths)
+
+		blob, err := s.ReadFileBlob(ctx, storageImpl, f)
+		if err != nil {
+			// Skip unreadable child files inside folders only when part of a
+			// larger archive; if a single non-folder file was requested and
+			// cannot be read, fail explicitly.
+			if len(roots) == 1 && roots[0].Type != FileTypeFolder {
+				return err
+			}
+			return nil
+		}
+
+		w, err := zw.Create(fileZipPath)
+		if err != nil {
+			return err
+		}
+		if len(blob) > 0 {
+			if _, err := w.Write(blob); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	for _, root := range roots {
+		if err := writeEntry(root, ""); err != nil {
+			_ = zw.Close()
+			return nil, "", err
+		}
+	}
+
+	if err := zw.Close(); err != nil {
+		return nil, "", err
+	}
+
+	archiveName := "files.zip"
+	if len(roots) == 1 {
+		base := sanitizeZipSegment(strings.TrimPrefix(roots[0].Name, "."), "files")
+		if roots[0].Type != FileTypeFolder {
+			ext := path.Ext(base)
+			if ext != "" {
+				base = strings.TrimSuffix(base, ext)
+			}
+		}
+		if base == "" {
+			base = "files"
+		}
+		archiveName = base + ".zip"
+	}
+
+	return buf.Bytes(), archiveName, nil
+}
+
+func sanitizeZipSegment(name, fallback string) string {
+	cleaned := strings.TrimSpace(name)
+	cleaned = strings.ReplaceAll(cleaned, "/", "_")
+	cleaned = strings.ReplaceAll(cleaned, "\\", "_")
+	cleaned = strings.ReplaceAll(cleaned, "..", "_")
+	if cleaned == "" || cleaned == "." || cleaned == "_" {
+		return fallback
+	}
+	return cleaned
+}
+
+func uniqueZipPath(parentDir, segment string, isDir bool, used map[string]int) string {
+	basePath := segment
+	if parentDir != "" {
+		basePath = parentDir + "/" + segment
+	}
+	key := strings.ToLower(basePath)
+	count := used[key]
+	used[key] = count + 1
+	if count == 0 {
+		return basePath
+	}
+
+	if isDir {
+		deduped := fmt.Sprintf("%s(%d)", basePath, count)
+		used[strings.ToLower(deduped)]++
+		return deduped
+	}
+
+	ext := path.Ext(segment)
+	stem := strings.TrimSuffix(segment, ext)
+	dedupedSegment := fmt.Sprintf("%s(%d)%s", stem, count, ext)
+	if parentDir != "" {
+		deduped := parentDir + "/" + dedupedSegment
+		used[strings.ToLower(deduped)]++
+		return deduped
+	}
+	used[strings.ToLower(dedupedSegment)]++
+	return dedupedSegment
+}
+
 
 // GetStorageAddress gets storage address for a file (fallback for when direct blob is empty)
 // Matches Python's File2DocumentService.get_storage_address function

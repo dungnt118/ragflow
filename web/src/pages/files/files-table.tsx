@@ -52,7 +52,7 @@ import { KnowledgeCell } from './knowledge-cell';
 import { LinkToDatasetDialog } from './link-to-dataset-dialog';
 import { UseMoveDocumentShowType } from './use-move-file';
 import { useNavigateToOtherFolder } from './use-navigate-to-folder';
-import { isFolderType, isKnowledgeBaseType } from './util';
+import { isFolderType } from './util';
 
 type FilesTableProps = Pick<
   ReturnType<typeof useFetchFileList>,
@@ -305,7 +305,7 @@ export function FilesTable({
       const isSkillsFolder =
         isFolderType(type) && name.toLowerCase() === 'skills';
       // The Go skills folder is not selectable because it's a special entry.
-      return !isKnowledgeBaseType(row.original.source_type) && !isSkillsFolder;
+      return !isSkillsFolder;
     },
     state: {
       sorting,

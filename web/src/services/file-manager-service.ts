@@ -28,6 +28,7 @@ const {
   getDocumentFile,
   getFile,
   moveFile,
+  batchDownloadFile,
   getDatasetDocumentFileDownload,
   getAttachmentFileDownload,
 } = api;
@@ -83,6 +84,13 @@ const fileManagerService = registerServer<keyof typeof methods>(
   methods,
   request,
 );
+
+export const downloadBatchFiles = (data: { ids: string[] }) => {
+  return request.post(batchDownloadFile, {
+    data,
+    responseType: 'blob',
+  });
+};
 
 export const downloadAgentFile = (data: { docId: string; ext: string }) => {
   return request.get(getAttachmentFileDownload(data.docId), {

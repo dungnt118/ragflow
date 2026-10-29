@@ -954,6 +954,9 @@ export default {
       uploadLimit:
         'Kích thước tệp không được vượt quá 10M và tổng số tệp không được vượt quá 128',
       destinationFolder: 'Thư mục đích',
+      largeDownloadWarningTitle: 'Cảnh báo dung lượng tải xuống lớn',
+      largeDownloadWarningContent:
+        'Tổng dung lượng tải xuống ({{size}}) vượt quá 15MB. Quá trình nén và tải xuống có thể mất nhiều thời gian chờ đợi. Bạn có muốn tiếp tục không?',
     },
     flow: {
       cite: 'Hiển thị trích dẫn',

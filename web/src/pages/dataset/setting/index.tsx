@@ -311,7 +311,7 @@ export default function DatasetSetting() {
                 </section>
               </div>
 
-              <div className="p-5 text-right items-center flex justify-end gap-3 w-[768px]">
+              <div className="p-5 text-right items-center flex justify-end gap-3 w-full max-w-3xl">
                 <Button
                   type="reset"
                   variant="transparent"

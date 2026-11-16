@@ -220,23 +220,47 @@ RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod,sharing=locked
     done; \
     if [ "$ok" -ne 1 ]; then echo "go mod download failed after 5 attempts" >&2; exit 1; fi
 
+# Fetch and unpack native static libraries (office_oxide, pdfium, pdf_oxide,
+# onnxruntime) into ${HOME}/ragflow-native-libs before copying source so code
+# edits keep this layer cached and upstream runner image drift never breaks builds.
+ARG ORT_VERSION=1.29.0
+ARG ORT_RELEASE_TAG=onnxruntime-v1.29.0-patch2
+ARG PDFIUM_STATIC_VERSION=7809
+ARG PDF_OXIDE_VERSION=0.3.73
+RUN --mount=type=cache,id=ragflow_native_archives,target=/tmp/native_archives,sharing=locked \
+    set -euo pipefail; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+      x86_64|amd64) oo_asset="native-linux-x86_64.tar.gz"; pdfium_asset="pdfium-linux-x64-static.tgz"; pdf_oxide_asset="pdf_oxide-go-ffi-linux-amd64.tar.gz"; ort_target="linux-x86_64"; ort_arch="x64" ;; \
+      aarch64|arm64) oo_asset="native-linux-aarch64.tar.gz"; pdfium_asset="pdfium-linux-arm64-static.tgz"; pdf_oxide_asset="pdf_oxide-go-ffi-linux-arm64.tar.gz"; ort_target="linux-aarch64"; ort_arch="aarch64" ;; \
+      *) echo "Unsupported arch: $arch" >&2; exit 1 ;; \
+    esac; \
+    oo_ver="$(grep -m1 -E '^[[:space:]]*github.com/yfedoseev/office_oxide/go[[:space:]]+v' go.mod | sed -E 's/.*v([0-9][^[:space:]]*).*/\1/')"; \
+    mkdir -p "${HOME}/ragflow-native-libs/office_oxide" "${HOME}/ragflow-native-libs/pdfium-static" "${HOME}/ragflow-native-libs/pdf_oxide" "${HOME}/ragflow-native-libs/onnxruntime/static_lib"; \
+    fetch_if_missing() { \
+      local url="$1" dest="$2"; \
+      if [ ! -s "$dest" ]; then \
+        curl --retry 5 --retry-delay 2 --retry-all-errors -fsSL -o "${dest}.tmp" "$url" && mv "${dest}.tmp" "$dest"; \
+      fi; \
+    }; \
+    fetch_if_missing "https://github.com/yfedoseev/office_oxide/releases/download/v${oo_ver}/${oo_asset}" "/tmp/native_archives/${oo_asset}"; \
+    tar -xzf "/tmp/native_archives/${oo_asset}" -C "${HOME}/ragflow-native-libs/office_oxide"; \
+    fetch_if_missing "https://github.com/kognitos/pdfium-static/releases/download/chromium%2F${PDFIUM_STATIC_VERSION}/${pdfium_asset}" "/tmp/native_archives/${pdfium_asset}"; \
+    tar -xzf "/tmp/native_archives/${pdfium_asset}" -C "${HOME}/ragflow-native-libs/pdfium-static"; \
+    fetch_if_missing "https://github.com/yfedoseev/pdf_oxide/releases/download/v${PDF_OXIDE_VERSION}/${pdf_oxide_asset}" "/tmp/native_archives/${pdf_oxide_asset}"; \
+    tar -xzf "/tmp/native_archives/${pdf_oxide_asset}" -C "${HOME}/ragflow-native-libs/pdf_oxide"; \
+    ort_zip="onnxruntime-v${ORT_VERSION}-${ort_target}.zip"; \
+    fetch_if_missing "https://github.com/infiniflow/ragflow-build/releases/download/${ORT_RELEASE_TAG}/${ort_zip}" "/tmp/native_archives/${ort_zip}"; \
+    stage_dir="$(mktemp -d)"; \
+    unzip -q "/tmp/native_archives/${ort_zip}" -d "$stage_dir"; \
+    extracted_dir="$(find "$stage_dir" -mindepth 1 -maxdepth 1 -type d | head -1)"; \
+    mv "$extracted_dir" "${HOME}/ragflow-native-libs/onnxruntime/static_lib/onnxruntime-linux-${ort_arch}-static_lib-${ORT_VERSION}-glibc2_28"; \
+    rm -rf "$stage_dir"
+
 COPY internal internal
 COPY cmd cmd
 COPY build.sh ./
 COPY Dockerfile ./
-
-# ONNX Runtime static archives: build.sh's _seed_from_system copies the ORT
-# static libs from the runner's pre-baked /opt/ragflow-native-libs/onnxruntime
-# (arch-correct per TARGETARCH) into the user-cache path ONNXRUNTIME_STATIC_PREFIX
-# before linking. These .a files are consumed at link time only and do NOT enter
-# the final image (only the compiled /ragflow/bin is COPY --from=go-builder).
-# The Dockerfile no longer pre-copies them here: pre-creating the user-cache dir
-# would make _seed_from_system treat it as "already cached" and skip the copy on
-# the non-matching architecture (e.g. the arm64 runner has no x64 dir), so we
-# rely on build.sh to seed ORT for both amd64 and arm64. ARG ORT_VERSION stays
-# because build.sh's check_ort_version_consistency greps it to cross-check the
-# pinned ORT release against internal/common/environments.go.
-ARG ORT_VERSION=1.29.0
 
 RUN git config --global safe.directory "*" && \
     cd /ragflow && ./build.sh --cpp

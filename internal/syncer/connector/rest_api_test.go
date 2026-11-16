@@ -225,6 +225,33 @@ func TestRestAPIAuthPreparation(t *testing.T) {
 		t.Fatalf("X-Key=%q", got)
 	}
 
+	xApiKeyDefault := mustRestAPIConnector(t, map[string]any{
+		"url":            "https://example.com",
+		"content_fields": "title",
+		"auth_type":      "x-api-key",
+		"credentials":    map[string]any{"api_key": "x-secret-val"},
+	})
+	if err := xApiKeyDefault.prepare(); err != nil {
+		t.Fatalf("prepare x-api-key default: %v", err)
+	}
+	if got := xApiKeyDefault.authHeaders["X-API-KEY"]; got != "x-secret-val" {
+		t.Fatalf("X-API-KEY default header expected %q, got %q", "x-secret-val", got)
+	}
+
+	xApiKeyCustom := mustRestAPIConnector(t, map[string]any{
+		"url":            "https://example.com",
+		"content_fields": "title",
+		"auth_type":      "X-API-KEY",
+		"auth_config":    map[string]any{"header_name": "X-Custom-Header"},
+		"credentials":    map[string]any{"token": "token-as-key"},
+	})
+	if err := xApiKeyCustom.prepare(); err != nil {
+		t.Fatalf("prepare X-API-KEY custom: %v", err)
+	}
+	if got := xApiKeyCustom.authHeaders["X-Custom-Header"]; got != "token-as-key" {
+		t.Fatalf("X-Custom-Header expected %q, got %q", "token-as-key", got)
+	}
+
 	bearer := mustRestAPIConnector(t, map[string]any{
 		"url":            "https://example.com",
 		"content_fields": "title",
@@ -358,6 +385,21 @@ func TestRestAPIItemToDocument(t *testing.T) {
 	}
 	if doc.Fingerprint != contentFingerprint(doc.Blob) {
 		t.Fatalf("fingerprint mismatch")
+	}
+
+	// Verify multi-byte UTF-8 (Vietnamese 2-byte \xC3 and 3-byte \xE1 runes)
+	// straddling byte index 100 is truncated on a rune boundary, never leaving
+	// an orphaned leading byte.
+	vnTitle := strings.Repeat("a", 99) + "áấ" + strings.Repeat("b", 20)
+	vnDoc, err := c.itemToDocument(map[string]any{
+		"id":    "vn-1",
+		"title": vnTitle,
+	})
+	if err != nil {
+		t.Fatalf("itemToDocument UTF-8: %v", err)
+	}
+	if gotRunes := []rune(vnDoc.SemanticIdentifier); len(gotRunes) != 100 || gotRunes[99] != 'á' {
+		t.Fatalf("SemanticIdentifier runes = %d (last=%q), want 100 ending with 'á': %q", len(gotRunes), gotRunes[len(gotRunes)-1], vnDoc.SemanticIdentifier)
 	}
 }
 
@@ -1380,5 +1422,235 @@ func TestRestAPISyncSessionResumeRejectsMissingAnchor(t *testing.T) {
 	mu.Unlock()
 	if len(got) != 1 || got[0] != "1" {
 		t.Fatalf("requested pages=%v want [1]", got)
+	}
+}
+
+func TestRestAPIMasterDetailMarkdownAndTitleField(t *testing.T) {
+	withRestAPITestHooks(t)
+	var listCalls, detailCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/posts":
+			listCalls.Add(1)
+			if r.URL.Query().Get("status") != "published" {
+				t.Fatalf("unexpected query: %s", r.URL.RawQuery)
+			}
+			json.NewEncoder(w).Encode(map[string]any{
+				"posts": []any{
+					map[string]any{
+						"_id":       "post-1",
+						"title":     map[string]any{"vi": "Hướng dẫn Đóng tiền", "en": "Payment Guide"},
+						"slug":      map[string]any{"vi": "huong-dan-dong-tien"},
+						"excerpt":   map[string]any{"vi": "Tóm tắt ngắn"},
+						"updatedAt": "2026-11-12T10:00:00Z",
+					},
+				},
+			})
+		case "/api/posts/post-1":
+			detailCalls.Add(1)
+			// Verify listing query_params are not leaked onto detail_url requests.
+			if r.URL.RawQuery != "" {
+				t.Fatalf("detail request must not inherit list query_params, got %q", r.URL.RawQuery)
+			}
+			json.NewEncoder(w).Encode(map[string]any{
+				"_id": "post-1",
+				"content": map[string]any{
+					"vi": `<h2>1. Video</h2><p><a href="https://drive.google.com/file/d/123">Xem video</a></p><p><img src="https://cdn.example.com/flow.png" alt="Flow" /></p>`,
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	c := mustRestAPIConnector(t, map[string]any{
+		"url":                  server.URL + "/api/posts",
+		"detail_url":           server.URL + "/api/posts/{_id}",
+		"query_params":         "status=published",
+		"items_path":           "posts",
+		"id_field":             "_id",
+		"title_field":          "title.vi",
+		"content_format":       "markdown",
+		"content_fields":       "title.vi,content.vi,excerpt.vi",
+		"metadata_fields":      "slug.vi,updatedAt",
+		"content_template":     "# {title_vi}\n\nURL: https://cms.demego.vn/{slug_vi}\n\n{content_vi}",
+		"poll_timestamp_field": "updatedAt",
+		"pagination_type":      "page",
+		"pagination_config":    map[string]any{"start_page": 1, "page_param": "page", "page_size_param": "limit", "page_size": 100},
+		"batch_size":           5,
+		"request_delay":        0,
+	})
+
+	if err := c.ValidateLive(t.Context()); err != nil {
+		t.Fatalf("ValidateLive: %v", err)
+	}
+	session, err := c.OpenSync(t.Context(), SyncRequest{FromBeginning: true, WindowEnd: time.Now().UTC()})
+	if err != nil {
+		t.Fatalf("OpenSync: %v", err)
+	}
+	defer session.Close()
+
+	batch, err := session.NextBatch(t.Context())
+	if err != nil {
+		t.Fatalf("NextBatch: %v", err)
+	}
+	if len(batch.Documents) != 1 {
+		t.Fatalf("docs=%d want 1", len(batch.Documents))
+	}
+	doc := batch.Documents[0]
+	if doc.Extension != ".md" {
+		t.Fatalf("Extension=%q want .md", doc.Extension)
+	}
+	if doc.SemanticIdentifier != "Hướng dẫn Đóng tiền" {
+		t.Fatalf("SemanticIdentifier=%q", doc.SemanticIdentifier)
+	}
+	body := string(doc.Blob)
+	for _, want := range []string{
+		"# Hướng dẫn Đóng tiền",
+		"URL: https://cms.demego.vn/huong-dan-dong-tien",
+		`## 1\. Video`,
+		"[Xem video](https://drive.google.com/file/d/123)",
+		"![Flow](https://cdn.example.com/flow.png)",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("markdown body missing %q\ngot:\n%s", want, body)
+		}
+	}
+	if _, err := session.NextBatch(t.Context()); !errors.Is(err, io.EOF) {
+		t.Fatalf("second NextBatch=%v want io.EOF", err)
+	}
+	if listCalls.Load() < 2 || detailCalls.Load() < 2 {
+		t.Fatalf("expected ValidateLive + OpenSync calls, got list=%d detail=%d", listCalls.Load(), detailCalls.Load())
+	}
+}
+
+func TestRestAPIIncrementalSyncSkipsDetailForUnchangedItems(t *testing.T) {
+	withRestAPITestHooks(t)
+	var detailIDs []string
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/posts":
+			json.NewEncoder(w).Encode(map[string]any{
+				"posts": []any{
+					map[string]any{"_id": "old-1", "title": "Old", "updatedAt": "2026-10-01T00:00:00Z"},
+					map[string]any{"_id": "new-2", "title": "New", "updatedAt": "2026-11-15T12:00:00Z"},
+				},
+			})
+		default:
+			mu.Lock()
+			detailIDs = append(detailIDs, r.URL.Path)
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]any{"content": "<p>Updated detail</p>"})
+		}
+	}))
+	defer server.Close()
+
+	c := mustRestAPIConnector(t, map[string]any{
+		"url":                  server.URL + "/api/posts",
+		"detail_url":           server.URL + "/api/posts/{_id}",
+		"items_path":           "posts",
+		"id_field":             "_id",
+		"title_field":          "title",
+		"content_format":       "markdown",
+		"content_fields":       "content",
+		"poll_timestamp_field": "updatedAt",
+		"pagination_type":      "none",
+		"request_delay":        0,
+	})
+
+	ws := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	we := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
+	session, err := c.OpenSync(t.Context(), SyncRequest{FromBeginning: false, WindowStart: &ws, WindowEnd: we})
+	if err != nil {
+		t.Fatalf("OpenSync: %v", err)
+	}
+	defer session.Close()
+
+	batch, err := session.NextBatch(t.Context())
+	if err != nil {
+		t.Fatalf("NextBatch: %v", err)
+	}
+	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != restAPIHash128("rest_api:new-2") {
+		t.Fatalf("unexpected docs: %+v", batch.Documents)
+	}
+	mu.Lock()
+	gotDetails := append([]string(nil), detailIDs...)
+	mu.Unlock()
+	if len(gotDetails) != 1 || gotDetails[0] != "/api/posts/new-2" {
+		t.Fatalf("detail requests=%v want [/api/posts/new-2]", gotDetails)
+	}
+}
+
+func TestRestAPIOpenPruneWithIDFieldAndMaxPagesGuard(t *testing.T) {
+	withRestAPITestHooks(t)
+	var detailHits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/api/posts" {
+			detailHits.Add(1)
+			http.NotFound(w, r)
+			return
+		}
+		page := r.URL.Query().Get("page")
+		var items []any
+		switch page {
+		case "1":
+			items = []any{map[string]any{"_id": "id-1"}, map[string]any{"_id": "id-2"}}
+		case "2":
+			items = []any{map[string]any{"_id": "id-3"}}
+		default:
+			items = []any{}
+		}
+		json.NewEncoder(w).Encode(map[string]any{"posts": items})
+	}))
+	defer server.Close()
+
+	baseCfg := map[string]any{
+		"url":               server.URL + "/api/posts",
+		"detail_url":        server.URL + "/api/posts/{_id}",
+		"items_path":        "posts",
+		"id_field":          "_id",
+		"content_fields":    "title",
+		"pagination_type":   "page",
+		"pagination_config": map[string]any{"start_page": 1, "page_size": 2, "page_size_param": "limit"},
+		"request_delay":     0,
+		"batch_size":        10,
+	}
+
+	c := mustRestAPIConnector(t, baseCfg)
+	pruneSession, err := c.OpenPrune(t.Context(), PruneRequest{})
+	if err != nil {
+		t.Fatalf("OpenPrune: %v", err)
+	}
+	defer pruneSession.Close()
+	batch, err := pruneSession.NextBatch(t.Context())
+	if err != nil {
+		t.Fatalf("prune NextBatch: %v", err)
+	}
+	if len(batch.Documents) != 3 {
+		t.Fatalf("prune docs=%d want 3", len(batch.Documents))
+	}
+	if detailHits.Load() != 0 {
+		t.Fatalf("OpenPrune must not fetch detail_url, got %d hits", detailHits.Load())
+	}
+
+	// If max_pages truncates a full page, OpenPrune must abort rather than prune missing pages.
+	truncatedCfg := map[string]any{
+		"url":               server.URL + "/api/posts",
+		"items_path":        "posts",
+		"id_field":          "_id",
+		"content_fields":    "title",
+		"pagination_type":   "page",
+		"pagination_config": map[string]any{"start_page": 1, "page_size": 2, "page_size_param": "limit"},
+		"max_pages":         1,
+		"request_delay":     0,
+	}
+	cTrunc := mustRestAPIConnector(t, truncatedCfg)
+	if _, err := cTrunc.OpenPrune(t.Context(), PruneRequest{}); err == nil || !strings.Contains(err.Error(), "max_pages") {
+		t.Fatalf("truncated OpenPrune err=%v want max_pages abort", err)
 	}
 }

@@ -43,7 +43,7 @@ export function NextBanner() {
   const { t, i18n } = useTranslation();
   return (
     <h1
-      className="text-5xl leading-normal text-left"
+      className="text-2xl sm:text-4xl md:text-5xl leading-tight sm:leading-normal text-left"
       dir={i18n.language?.startsWith('ar') ? 'rtl' : 'ltr'}
     >
       <span className="font-semibold text-text-primary">

@@ -11,7 +11,7 @@ export default function DatasetWrapper() {
   return (
     <OwnerTenantIdContext.Provider value={data?.tenant_id ?? ''}>
       <KnowledgeBaseProvider knowledgeBase={data} loading={loading}>
-        <article className="pt-3 size-full grid grid-cols-[auto_1fr] grid-rows-1">
+        <article className="pt-2 sm:pt-3 size-full flex flex-col md:grid md:grid-cols-[auto_1fr] md:grid-rows-1 overflow-hidden">
           <SideBar dataset={data} />
 
           <Outlet />

@@ -25,8 +25,10 @@ import {
   useUpdateProviderInstance,
 } from '@/hooks/use-llm-request';
 import { IProviderInstance } from '@/interfaces/database/llm';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { useQueryClient } from '@tanstack/react-query';
-import { Plus } from 'lucide-react';
+import { ArrowLeft, Plus } from 'lucide-react';
 import { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ProviderInstanceCardRef } from './instance-card/interface';
 import { ProviderInstanceCard } from './instance-card/provider-instance-card';
@@ -61,6 +63,7 @@ import SystemSetting from './layout/system-setting';
 const SettingModelV2: FC = () => {
   const { t: tSetting } = useTranslate('setting');
   const [selection, setSelection] = useState<SidebarSelection>('default');
+  const [mobileShowDetail, setMobileShowDetail] = useState(false);
   // Stack of draft-instance identifiers, rendered as `ProviderInstanceCard`
   // entries below the persisted instances. Each draft can be cancelled
   // independently; saving is driven by the top Save button.
@@ -291,10 +294,37 @@ const SettingModelV2: FC = () => {
   return (
     <div className="flex w-full h-full border-[0.5px] border-border-button rounded-lg relative overflow-hidden">
       <Spotlight />
-      <section className="flex flex-col gap-4 w-[320px] shrink-0 px-5 border-r-[0.5px] border-border-button overflow-auto scrollbar-auto">
-        <Sidebar selection={selection} onSelect={setSelection} />
+      <section
+        className={cn(
+          'flex flex-col gap-4 w-full md:w-[320px] shrink-0 px-3 sm:px-5 border-r-[0.5px] border-border-button overflow-auto scrollbar-auto',
+          mobileShowDetail ? 'hidden md:flex' : 'flex',
+        )}
+      >
+        <Sidebar
+          selection={selection}
+          onSelect={(val) => {
+            setSelection(val);
+            setMobileShowDetail(true);
+          }}
+        />
       </section>
-      <section className="flex-1 flex flex-col overflow-hidden">
+      <section
+        className={cn(
+          'flex-1 flex flex-col overflow-hidden',
+          !mobileShowDetail ? 'hidden md:flex' : 'flex',
+        )}
+      >
+        <div className="md:hidden p-2 border-b border-border-button flex items-center">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setMobileShowDetail(false)}
+            className="gap-1 text-xs"
+          >
+            <ArrowLeft className="size-4" />
+            <span>Quay lại</span>
+          </Button>
+        </div>
         {selection === 'default' ? (
           <div className="flex-1 overflow-auto scrollbar-auto">
             <SystemSetting />

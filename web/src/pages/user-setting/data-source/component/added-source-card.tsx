@@ -14,8 +14,14 @@
  *  limitations under the License.
  */
 
+import FileStatusBadge from '@/components/file-status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  RunningStatus,
+  RunningStatusMap,
+  RunningStatusOld,
+} from '@/constants/knowledge';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { Settings, Trash2 } from 'lucide-react';
 import { useDataSourceInfo } from '../constant';
@@ -47,9 +53,29 @@ export const AddedSourceCard = (props: IAddedSourceCardProps) => {
         {list.map((item) => (
           <div
             key={item.id}
-            className="flex flex-row items-center justify-between rounded-md bg-bg-card px-[10px] py-4"
+            className={`flex flex-row items-center justify-between rounded-md bg-bg-card px-[10px] py-4 ${
+              item.status === RunningStatus.FAIL ||
+              item.status === RunningStatusOld.FAIL
+                ? 'border border-state-error/50 bg-state-error/5'
+                : item.status === RunningStatus.CANCEL ||
+                    item.status === RunningStatusOld.CANCEL
+                  ? 'border border-state-warning/50 bg-state-warning/5'
+                  : ''
+            }`}
           >
-            <div className="text-sm text-text-primary ">{item.name}</div>
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="text-sm text-text-primary truncate">
+                {item.name}
+              </div>
+              {item.status &&
+                RunningStatusMap[item.status as RunningStatus] && (
+                  <FileStatusBadge
+                    status={item.status as RunningStatus}
+                    name={RunningStatusMap[item.status as RunningStatus]}
+                    className="!w-auto whitespace-nowrap px-2 h-6 text-xs shrink-0"
+                  />
+                )}
+            </div>
             <div className="text-sm text-text-secondary  flex gap-2">
               <Button
                 variant={'ghost'}

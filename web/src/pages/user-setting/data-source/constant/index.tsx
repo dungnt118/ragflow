@@ -205,6 +205,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.BIGQUERY]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.REST_API]: {
+    syncDeletedFiles: true,
+  },
 };
 
 const isDataSourceFeatureVisible = (
@@ -2035,6 +2038,14 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       placeholder: 'https://api.example.com/v1/resources',
     },
     {
+      label: t('setting.dataSourceFieldDetailUrl'),
+      name: 'config.detail_url',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'https://api.example.com/v1/posts/{id}',
+      tooltip: t('setting.restApiDetailUrlTip'),
+    },
+    {
       label: t('setting.dataSourceFieldHttpMethod'),
       name: 'config.method',
       type: FormFieldType.Select,
@@ -2070,12 +2081,24 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       tooltip: t('setting.restApiIdFieldTip'),
     },
     {
+      label: t('setting.dataSourceFieldTitleField'),
+      name: 'config.title_field',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'title',
+      tooltip: t('setting.restApiTitleFieldTip'),
+    },
+    {
       label: t('setting.dataSourceFieldAuthType'),
       name: 'config.auth_type',
       type: FormFieldType.Select,
       required: true,
       options: [
         { label: t('setting.dataSourceOptionNone'), value: 'none' },
+        {
+          label: t('setting.dataSourceOptionXApiKey') || 'X-API-KEY (Header)',
+          value: 'x-api-key',
+        },
         {
           label: t('setting.dataSourceOptionApiKeyHeader'),
           value: 'api_key_header',
@@ -2109,9 +2132,14 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       type: FormFieldType.Password,
       required: false,
       shouldRender: (values: any) =>
+        values?.config?.auth_type === 'x-api-key' ||
         values?.config?.auth_type === 'api_key_header',
       customValidate: (val: string, values: any) => {
-        if (values?.config?.auth_type === 'api_key_header' && !val) {
+        if (
+          (values?.config?.auth_type === 'x-api-key' ||
+            values?.config?.auth_type === 'api_key_header') &&
+          !val
+        ) {
           return t('setting.restApiValidationApiKeyRequired');
         }
         return true;
@@ -2168,6 +2196,29 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       tooltip: t('setting.restApiContentFieldsTip'),
     },
     {
+      label: t('setting.dataSourceFieldContentFormat'),
+      name: 'config.content_format',
+      type: FormFieldType.Select,
+      required: false,
+      defaultValue: 'text',
+      options: [
+        { label: t('setting.dataSourceOptionContentFormatText'), value: 'text' },
+        {
+          label: t('setting.dataSourceOptionContentFormatMarkdown'),
+          value: 'markdown',
+        },
+      ],
+      tooltip: t('setting.restApiContentFormatTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldContentTemplate'),
+      name: 'config.content_template',
+      type: FormFieldType.Textarea,
+      required: false,
+      placeholder: '# {title}\n\n{body}',
+      tooltip: t('setting.restApiContentTemplateTip'),
+    },
+    {
       label: t('setting.dataSourceFieldMetadataFields'),
       name: 'config.metadata_fields',
       type: FormFieldType.Text,
@@ -2194,6 +2245,30 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       type: FormFieldType.Number,
       required: false,
       defaultValue: 1,
+      shouldRender: (values: any) => values?.config?.pagination_type === 'page',
+    },
+    {
+      label: t('setting.dataSourceFieldPageParam'),
+      name: 'config.pagination_config.page_param',
+      type: FormFieldType.Text,
+      required: false,
+      defaultValue: 'page',
+      shouldRender: (values: any) => values?.config?.pagination_type === 'page',
+    },
+    {
+      label: t('setting.dataSourceFieldPageSizeParam'),
+      name: 'config.pagination_config.page_size_param',
+      type: FormFieldType.Text,
+      required: false,
+      defaultValue: 'page_size',
+      shouldRender: (values: any) => values?.config?.pagination_type === 'page',
+    },
+    {
+      label: t('setting.dataSourceFieldPageSize'),
+      name: 'config.pagination_config.page_size',
+      type: FormFieldType.Number,
+      required: false,
+      defaultValue: 100,
       shouldRender: (values: any) => values?.config?.pagination_type === 'page',
     },
     {
@@ -2249,6 +2324,15 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       required: false,
       placeholder: `{"X-Custom-Header": "value"}`,
       tooltip: t('setting.restApiHeadersTip'),
+      shouldRender: (values: any) => !!values?.config?.show_advanced,
+    },
+    {
+      label: t('setting.dataSourceFieldDetailResponsePath'),
+      name: 'config.detail_response_path',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '$.data',
+      tooltip: t('setting.restApiDetailResponsePathTip'),
       shouldRender: (values: any) => !!values?.config?.show_advanced,
     },
     {
@@ -2866,6 +2950,8 @@ export const DataSourceFormDefaultValues = {
     source: DataSourceKey.REST_API,
     config: {
       url: '',
+      detail_url: '',
+      detail_response_path: '',
       method: 'GET',
       query_params: '',
       headers: '',
@@ -2873,7 +2959,10 @@ export const DataSourceFormDefaultValues = {
       auth_config: {},
       items_path: '',
       id_field: '',
+      title_field: '',
+      content_format: 'text',
       content_fields: '',
+      content_template: '',
       metadata_fields: '',
       pagination_type: 'none',
       pagination_config: {},

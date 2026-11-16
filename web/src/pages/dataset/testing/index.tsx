@@ -18,9 +18,9 @@ export default function RetrievalTesting() {
   const [count] = useState(1); // TODO: Different layouts are needed; if they are no longer required, consider deleting them.
 
   return (
-    <div className="pr-5 pb-5">
+    <div className="pr-0 sm:pr-5 pb-5">
       <Card className="size-full bg-transparent shadow-none flex flex-col">
-        <CardHeader className="p-5 border-b-0.5 border-border-button">
+        <CardHeader className="p-3 sm:p-5 border-b-0.5 border-border-button">
           <header>
             <CardTitle as="h1">
               {t('knowledgeDetails.retrievalTesting')}
@@ -33,7 +33,7 @@ export default function RetrievalTesting() {
         </CardHeader>
 
         {count === 1 ? (
-          <CardContent className="flex-1 overflow-hidden p-0 grid grid-rows-1 grid-cols-2 divide-x-0.5">
+          <CardContent className="flex-1 overflow-auto p-0 flex flex-col lg:grid lg:grid-rows-1 lg:grid-cols-2 lg:divide-x-0.5">
             <article className="size-full flex-1 flex flex-col">
               <header className="px-5 py-3">
                 <h2 className="font-semibold text-base leading-8">

@@ -206,8 +206,10 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       <section
         data-testid="chat-detail-settings"
         className={cn(
-          'transition-[width] ease-out duration-300 flex-shrink-0 flex flex-col overflow-hidden',
-          settingVisible ? 'w-[440px]' : 'w-0',
+          'transition-all ease-out duration-300 flex-shrink-0 flex flex-col overflow-hidden',
+          settingVisible
+            ? 'fixed inset-0 z-50 bg-bg-base md:static md:z-auto md:w-[440px]'
+            : 'w-0 hidden md:flex',
         )}
       >
         {settingVisible && (

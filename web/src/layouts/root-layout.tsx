@@ -1,12 +1,28 @@
-import { Outlet } from 'react-router';
+import { cn } from '@/lib/utils';
+import { Routes } from '@/routes';
+import { Outlet, useLocation } from 'react-router';
 import { Header } from './components/header';
+import { MobileBottomNav } from './components/mobile-bottom-nav';
 
 export function RootLayoutContainer({ children }: React.PropsWithChildren) {
-  return (
-    <div className="size-full min-w-0 grid grid-flow-col grid-cols-1 grid-rows-[auto_1fr]">
-      <Header className="px-5 py-4" />
+  const { pathname } = useLocation();
+  const hasBottomNav =
+    !pathname.startsWith(`${Routes.Chat}/`) &&
+    !pathname.startsWith(`${Routes.Agent}/`);
 
-      <main className="size-full min-w-0 overflow-hidden">{children}</main>
+  return (
+    <div className="size-full min-w-0 grid grid-flow-col grid-cols-1 grid-rows-[auto_1fr] relative">
+      <Header className="px-3 py-2.5 sm:px-5 sm:py-4" />
+
+      <main
+        className={cn(
+          'size-full min-w-0 overflow-hidden',
+          hasBottomNav && 'pb-14 md:pb-0',
+        )}
+      >
+        {children}
+      </main>
+      <MobileBottomNav />
     </div>
   );
 }

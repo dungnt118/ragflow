@@ -336,6 +336,8 @@ func (r *SyncRunner) processDocuments(ctx context.Context, taskContext dao.SyncT
 	stats := service.SyncStats{}
 
 	var firstErr error
+	succeeded := 0
+	var sampleErrMsgs int
 	lastCancelCheck := time.Time{}
 	for _, sourceDocument := range documents {
 		if err := ctx.Err(); err != nil {
@@ -349,14 +351,37 @@ func (r *SyncRunner) processDocuments(ctx context.Context, taskContext dao.SyncT
 		}
 		result, err := r.processDocumentWithRetry(ctx, taskContext, sourceType, session, sourceDocument)
 		if err != nil {
+			if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, errSyncTaskCanceled) {
+				return stats, err
+			}
+			stats.ErrorCount++
+			if sampleErrMsgs < 5 {
+				line := fmt.Sprintf("%s: %v", sourceDocument.SemanticIdentifier, err)
+				if stats.ErrorMsg != "" {
+					stats.ErrorMsg += "\n"
+				}
+				stats.ErrorMsg += line
+				sampleErrMsgs++
+			}
 			if firstErr == nil {
 				firstErr = err
 			}
 			continue
 		}
+		succeeded++
 		stats.AddResult(result)
 	}
-	return stats, firstErr
+	if succeeded == 0 && firstErr != nil {
+		return stats, firstErr
+	}
+	if firstErr != nil {
+		common.Warn("sync batch completed with partial document errors",
+			zap.String("task_id", taskContext.Task.ID),
+			zap.Int("succeeded", succeeded),
+			zap.Int64("failed", stats.ErrorCount),
+			zap.Error(firstErr))
+	}
+	return stats, nil
 }
 
 // processDocumentWithRetry retries transient item failures.

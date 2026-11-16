@@ -140,7 +140,9 @@ function SearchSetting({
         setWidth0('w-0 hidden');
       }, 500);
     } else {
-      setWidth0('w-[440px]');
+      setWidth0(
+        'fixed inset-0 z-50 bg-bg-base md:static md:z-auto md:w-[440px]',
+      );
     }
   }, [open]);
 

@@ -18,7 +18,7 @@ import { PropsWithChildren } from 'react';
 
 export function PageHeader({ children }: PropsWithChildren) {
   return (
-    <header className="flex justify-between items-center bg-text-title-invert p-5">
+    <header className="flex flex-wrap md:flex-nowrap justify-between items-center gap-3 bg-text-title-invert p-3 sm:p-5">
       {children}
     </header>
   );

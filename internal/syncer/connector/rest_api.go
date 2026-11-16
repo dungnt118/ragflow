@@ -33,6 +33,10 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 )
 
 // RestAPIConnector is a configuration-driven REST API data source connector.
@@ -54,6 +58,8 @@ type RestAPIConnector struct {
 // restAPIConfig is the validated connector configuration.
 type restAPIConfig struct {
 	URL                string
+	DetailURL          string
+	DetailResponsePath string
 	Method             string
 	Headers            map[string]string
 	QueryParams        map[string]string
@@ -61,7 +67,9 @@ type restAPIConfig struct {
 	AuthConfig         map[string]any
 	ItemsPath          string
 	IDField            string
+	TitleField         string
 	ContentFields      []string
+	ContentFormat      string
 	MetadataFields     []string
 	PaginationType     string
 	PaginationConfig   map[string]any
@@ -91,6 +99,7 @@ const (
 
 const (
 	restAPIAuthNone         = "none"
+	restAPIAuthXAPIKey      = "x-api-key"
 	restAPIAuthAPIKeyHeader = "api_key_header"
 	restAPIAuthBearer       = "bearer"
 	restAPIAuthBasic        = "basic"
@@ -99,7 +108,12 @@ const (
 	restAPIPaginationPage   = "page"
 	restAPIPaginationOffset = "offset"
 	restAPIPaginationCursor = "cursor"
+
+	restAPIContentFormatText     = "text"
+	restAPIContentFormatMarkdown = "markdown"
 )
+
+var restAPIPlaceholderRE = regexp.MustCompile(`\{([^{}]+)\}`)
 
 // Connector error types let callers (e.g. the connector /test endpoint) map
 // failures to stable response codes.
@@ -144,6 +158,12 @@ func NewRestAPIConnector(config map[string]any) (*RestAPIConnector, error) {
 	}
 	if err := validateRestAPIURLForSSRF(cfg.URL); err != nil {
 		return nil, err
+	}
+	if cfg.DetailURL != "" {
+		sanitizedDetail := restAPIPlaceholderRE.ReplaceAllString(cfg.DetailURL, "item")
+		if err := validateRestAPIURLForSSRF(sanitizedDetail); err != nil {
+			return nil, err
+		}
 	}
 
 	parsed, err := url.Parse(cfg.URL)
@@ -190,6 +210,7 @@ func parseRestAPIConfig(config map[string]any) (*restAPIConfig, error) {
 	cfg := &restAPIConfig{
 		Method:         "GET",
 		AuthType:       restAPIAuthNone,
+		ContentFormat:  restAPIContentFormatText,
 		PaginationType: restAPIPaginationNone,
 		BatchSize:      restAPIDefaultBatchSize,
 		MaxPages:       restAPIDefaultMaxPages,
@@ -200,6 +221,8 @@ func parseRestAPIConfig(config map[string]any) (*restAPIConfig, error) {
 	if cfg.URL == "" {
 		return nil, &ConnectorValidationError{Message: "Invalid REST API config: url\n  Field required"}
 	}
+	cfg.DetailURL = strings.TrimSpace(stringConfig(config["detail_url"]))
+	cfg.DetailResponsePath = strings.TrimSpace(stringConfig(config["detail_response_path"]))
 	if method := strings.ToUpper(strings.TrimSpace(stringConfig(config["method"]))); method != "" {
 		cfg.Method = method
 	}
@@ -209,20 +232,37 @@ func parseRestAPIConfig(config map[string]any) (*restAPIConfig, error) {
 	cfg.Headers = restAPITextToDict(config["headers"])
 	cfg.QueryParams = restAPITextToDict(config["query_params"])
 
-	if auth := strings.TrimSpace(stringConfig(config["auth_type"])); auth != "" {
-		cfg.AuthType = auth
-	}
-	switch cfg.AuthType {
-	case restAPIAuthNone, restAPIAuthAPIKeyHeader, restAPIAuthBearer, restAPIAuthBasic:
-	default:
-		return nil, &ConnectorValidationError{Message: fmt.Sprintf("Unsupported auth_type '%s'.", cfg.AuthType)}
+	if auth := strings.ToLower(strings.TrimSpace(stringConfig(config["auth_type"]))); auth != "" {
+		switch auth {
+		case "x-api-key", "x_api_key", "xapikey", "x-api-key-header":
+			cfg.AuthType = restAPIAuthXAPIKey
+		case "api_key_header":
+			cfg.AuthType = restAPIAuthAPIKeyHeader
+		case "bearer":
+			cfg.AuthType = restAPIAuthBearer
+		case "basic":
+			cfg.AuthType = restAPIAuthBasic
+		case "none":
+			cfg.AuthType = restAPIAuthNone
+		default:
+			return nil, &ConnectorValidationError{Message: fmt.Sprintf("Unsupported auth_type '%s'.", auth)}
+		}
 	}
 	cfg.AuthConfig = configAnyMap(config["auth_config"])
 	cfg.ItemsPath = strings.TrimSpace(stringConfig(config["items_path"]))
 	cfg.IDField = strings.TrimSpace(stringConfig(config["id_field"]))
+	cfg.TitleField = strings.TrimSpace(stringConfig(config["title_field"]))
 	cfg.ContentFields = restAPICoerceFieldList(config["content_fields"])
 	if len(cfg.ContentFields) == 0 {
 		return nil, &ConnectorValidationError{Message: "At least one content field must be configured (content_fields)."}
+	}
+	if format := strings.ToLower(strings.TrimSpace(stringConfig(config["content_format"]))); format != "" {
+		switch format {
+		case restAPIContentFormatText, restAPIContentFormatMarkdown:
+			cfg.ContentFormat = format
+		default:
+			return nil, &ConnectorValidationError{Message: fmt.Sprintf("Unsupported content_format '%s'.", format)}
+		}
 	}
 	cfg.MetadataFields = restAPICoerceFieldList(config["metadata_fields"])
 
@@ -417,17 +457,27 @@ func (c *RestAPIConnector) prepare() error {
 
 	switch c.cfg.AuthType {
 	case restAPIAuthNone:
-	case restAPIAuthAPIKeyHeader:
+	case restAPIAuthXAPIKey, restAPIAuthAPIKeyHeader:
 		headerName := strings.TrimSpace(stringConfig(c.cfg.AuthConfig["header_name"]))
+		if headerName == "" {
+			if c.cfg.AuthType == restAPIAuthXAPIKey {
+				headerName = "X-API-KEY"
+			} else {
+				return &ConnectorMissingCredentialError{Message: "REST API (api_key_header) requires 'header_name' in auth_config and 'api_key' in credentials"}
+			}
+		}
 		apiKey := stringConfig(c.credentials["api_key"])
+		if apiKey == "" {
+			apiKey = stringConfig(c.credentials["token"])
+		}
 		if apiKey == "" {
 			apiKey = stringConfig(c.cfg.AuthConfig["api_key_value"])
 		}
 		if apiKey == "" {
 			apiKey = stringConfig(c.cfg.AuthConfig["api_key"])
 		}
-		if headerName == "" || apiKey == "" {
-			return &ConnectorMissingCredentialError{Message: "REST API (api_key_header) requires 'header_name' in auth_config and 'api_key' in credentials"}
+		if apiKey == "" {
+			return &ConnectorMissingCredentialError{Message: fmt.Sprintf("REST API (%s) requires 'api_key' in credentials", c.cfg.AuthType)}
 		}
 		c.authHeaders[headerName] = apiKey
 	case restAPIAuthBearer:
@@ -511,8 +561,19 @@ func (c *RestAPIConnector) ValidateLive(ctx context.Context) error {
 			c.applyCursorPagination(params, cursor)
 		}
 	}
-	_, err := c.fetchPage(ctx, params)
-	return err
+	resp, err := c.fetchPage(ctx, params)
+	if err != nil {
+		return err
+	}
+	if c.cfg.DetailURL != "" {
+		items := restAPIExtractItems(resp, c.cfg.ItemsPath)
+		if len(items) > 0 {
+			if _, err := c.fetchDetailAndMerge(ctx, items[0]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // ValidateConnectorSetting validates REST API settings from an unsaved config.
@@ -547,10 +608,44 @@ func (c *RestAPIConnector) OpenSync(ctx context.Context, request SyncRequest) (S
 	return session, nil
 }
 
-// OpenPrune reports prune as unsupported for sources that cannot enumerate a
-// complete slim snapshot; prune tasks then complete as no-ops.
+// OpenPrune collects the full slim snapshot of source IDs from the listing API
+// when id_field is configured. Sources without id_field return ErrPruneUnsupported.
 func (c *RestAPIConnector) OpenPrune(ctx context.Context, request PruneRequest) (PruneSession, error) {
-	return nil, ErrPruneUnsupported
+	if c.cfg.IDField == "" {
+		return nil, ErrPruneUnsupported
+	}
+	if err := c.prepare(); err != nil {
+		return nil, err
+	}
+
+	it := newRestAPIItemIterator(c)
+	seen := make(map[string]struct{})
+	var documents []SlimDocument
+	for {
+		items, err := it.nextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if items == nil {
+			break
+		}
+		for _, item := range items {
+			rawID := c.getTypedFieldValue(c.cfg.IDField, item)
+			if rawID == nil || strings.TrimSpace(coerceRestAPIToText(rawID)) == "" {
+				continue
+			}
+			_, docID := c.computeItemIDs(item)
+			if _, exists := seen[docID]; exists {
+				continue
+			}
+			seen[docID] = struct{}{}
+			documents = append(documents, SlimDocument{SourceID: docID})
+		}
+	}
+	if !it.finished {
+		return nil, fmt.Errorf("rest api prune aborted: reached max_pages (%d) before exhausting all items", c.cfg.MaxPages)
+	}
+	return &sitemapPruneSession{documents: documents, batchSize: c.cfg.BatchSize}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -559,10 +654,16 @@ func (c *RestAPIConnector) OpenPrune(ctx context.Context, request PruneRequest) 
 
 // fetchPage fetches a single page with retry, mirroring _fetch_page.
 func (c *RestAPIConnector) fetchPage(ctx context.Context, params map[string]any) (any, error) {
+	return c.executeWithRetry(ctx, func() (any, error) {
+		return c.fetchPageOnce(ctx, params)
+	})
+}
+
+func (c *RestAPIConnector) executeWithRetry(ctx context.Context, attemptFn func() (any, error)) (any, error) {
 	delay := restAPIRetryBaseDelay
 	var lastErr error
 	for attempt := 0; attempt < restAPIRetryTries; attempt++ {
-		response, err := c.fetchPageOnce(ctx, params)
+		response, err := attemptFn()
 		if err == nil {
 			return response, nil
 		}
@@ -614,13 +715,6 @@ func (c *RestAPIConnector) fetchPageOnce(ctx context.Context, params map[string]
 
 	currentURL, queryParams := c.buildURLWithTemplates(merged)
 	currentMethod := c.cfg.Method
-	currentHeaders := make(map[string]string, len(c.cfg.Headers)+len(c.authHeaders))
-	for k, v := range c.cfg.Headers {
-		currentHeaders[k] = v
-	}
-	for k, v := range c.authHeaders {
-		currentHeaders[k] = v
-	}
 	currentBody := c.cfg.RequestBody
 	var bodyBytes []byte
 	if currentMethod == http.MethodPost {
@@ -634,12 +728,23 @@ func (c *RestAPIConnector) fetchPageOnce(ctx context.Context, params map[string]
 			}
 		}
 	}
+	return c.doJSONRequest(ctx, currentMethod, currentURL, queryParams, bodyBytes)
+}
+
+func (c *RestAPIConnector) doJSONRequest(ctx context.Context, method, rawURL string, queryParams map[string]any, bodyBytes []byte) (any, error) {
+	currentHeaders := make(map[string]string, len(c.cfg.Headers)+len(c.authHeaders))
+	for k, v := range c.cfg.Headers {
+		currentHeaders[k] = v
+	}
+	for k, v := range c.authHeaders {
+		currentHeaders[k] = v
+	}
 	currentAuth := c.basicAuth
-	previousNetloc := connectorNetloc(currentURL)
+	previousNetloc := connectorNetloc(rawURL)
 
 	resp, err := connectorRequest(ctx, connectorRequestOptions{
-		Method:       currentMethod,
-		RawURL:       currentURL,
+		Method:       method,
+		RawURL:       rawURL,
 		Body:         bodyBytes,
 		Headers:      currentHeaders,
 		Timeout:      restAPIRequestTimeout,
@@ -706,6 +811,98 @@ func (c *RestAPIConnector) fetchPageOnce(ctx context.Context, params map[string]
 		return nil, &RateLimitTriedTooManyTimesError{Message: fmt.Sprintf("REST API rate limited: exceeded '%d' retries (too many requests)", restAPI429MaxWaits)}
 	}
 	return c.handleResponse(resp)
+}
+
+// buildDetailURL resolves {field} placeholders in detail_url from a listing item.
+func (c *RestAPIConnector) buildDetailURL(item map[string]any) (string, error) {
+	template := c.cfg.DetailURL
+	matches := restAPIPlaceholderRE.FindAllStringSubmatchIndex(template, -1)
+	if len(matches) == 0 {
+		return template, nil
+	}
+	queryIdx := strings.IndexByte(template, '?')
+	var b strings.Builder
+	last := 0
+	for _, m := range matches {
+		b.WriteString(template[last:m[0]])
+		fieldPath := strings.TrimSpace(template[m[2]:m[3]])
+		rawVal := extractRestAPIField(item, fieldPath)
+		if rawVal == nil {
+			return "", &ConnectorValidationError{Message: fmt.Sprintf("REST API detail_url placeholder {%s} resolved to missing value", fieldPath)}
+		}
+		val := strings.TrimSpace(coerceRestAPIToText(rawVal))
+		if val == "" {
+			return "", &ConnectorValidationError{Message: fmt.Sprintf("REST API detail_url placeholder {%s} resolved to empty value", fieldPath)}
+		}
+		if queryIdx >= 0 && m[0] > queryIdx {
+			b.WriteString(url.QueryEscape(val))
+		} else {
+			b.WriteString(url.PathEscape(val))
+		}
+		last = m[1]
+	}
+	b.WriteString(template[last:])
+	return b.String(), nil
+}
+
+// fetchDetailAndMerge fetches the detail record for a list item and merges it
+// onto a shallow-cloned copy of the listing item.
+func (c *RestAPIConnector) fetchDetailAndMerge(ctx context.Context, item map[string]any) (map[string]any, error) {
+	if c.cfg.DetailURL == "" {
+		return item, nil
+	}
+	detailURL, err := c.buildDetailURL(item)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateRestAPIURLForSSRF(detailURL); err != nil {
+		return nil, err
+	}
+	resp, err := c.executeWithRetry(ctx, func() (any, error) {
+		return c.doJSONRequest(ctx, http.MethodGet, detailURL, nil, nil)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	detailPayload := resp
+	if c.cfg.DetailResponsePath != "" {
+		matches, err := restAPIJSONPathMatches(resp, c.cfg.DetailResponsePath)
+		if err != nil {
+			return nil, &ConnectorValidationError{Message: fmt.Sprintf("REST API detail_response_path error: %v", err)}
+		}
+		if len(matches) == 0 {
+			return nil, &ConnectorValidationError{Message: "REST API detail_response_path matched no object"}
+		}
+		detailPayload = matches[0]
+	}
+	detailMap, ok := detailPayload.(map[string]any)
+	if !ok {
+		return nil, &ConnectorValidationError{Message: "REST API detail response is not a JSON object"}
+	}
+	return mergeRestAPIItemMaps(item, detailMap), nil
+}
+
+func mergeRestAPIItemMaps(base, overlay map[string]any) map[string]any {
+	out := make(map[string]any, len(base)+len(overlay))
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, v := range overlay {
+		if v == nil {
+			if _, exists := out[k]; exists {
+				continue
+			}
+		}
+		if overlaySub, ok := v.(map[string]any); ok {
+			if baseSub, ok := out[k].(map[string]any); ok {
+				out[k] = mergeRestAPIItemMaps(baseSub, overlaySub)
+				continue
+			}
+		}
+		out[k] = v
+	}
+	return out
 }
 
 func (c *RestAPIConnector) handleResponse(resp *http.Response) (any, error) {
@@ -1435,19 +1632,34 @@ func restAPITimestampFromFloat(f float64) *time.Time {
 	return &t
 }
 
-// itemToDocument mirrors _item_to_document.
-func (c *RestAPIConnector) itemToDocument(item map[string]any) (SourceDocument, error) {
+func (c *RestAPIConnector) computeItemIDs(item map[string]any) (string, string) {
 	var rawID string
 	if c.cfg.IDField != "" {
 		if v := c.getTypedFieldValue(c.cfg.IDField, item); v != nil {
 			rawID = coerceRestAPIToText(v)
-		} else {
-			rawID = restAPIHash128("rest_api_item:" + restAPIStableText(item))
 		}
-	} else {
+	}
+	if rawID == "" {
 		rawID = restAPIHash128("rest_api_item:" + restAPIStableText(item))
 	}
-	docID := restAPIHash128("rest_api:" + rawID)
+	return rawID, restAPIHash128("rest_api:" + rawID)
+}
+
+func formatRestAPIFieldContent(text, contentFormat string) string {
+	if contentFormat == restAPIContentFormatMarkdown {
+		if strings.Contains(text, "<") && strings.Contains(text, ">") {
+			if converted, err := newMarkdownConverter().ConvertString(text); err == nil {
+				return strings.TrimSpace(converted)
+			}
+		}
+		return strings.TrimSpace(text)
+	}
+	return restAPIStripHTML(text)
+}
+
+// itemToDocument mirrors _item_to_document.
+func (c *RestAPIConnector) itemToDocument(item map[string]any) (SourceDocument, error) {
+	rawID, docID := c.computeItemIDs(item)
 
 	var contentText string
 	if c.cfg.ContentTemplate != "" {
@@ -1456,12 +1668,16 @@ func (c *RestAPIConnector) itemToDocument(item map[string]any) (SourceDocument, 
 		parts := []string{}
 		for _, field := range c.cfg.ContentFields {
 			if v := c.getTypedFieldValue(field, item); v != nil {
-				if text := restAPIStripHTML(coerceRestAPIToText(v)); text != "" {
+				if text := formatRestAPIFieldContent(coerceRestAPIToText(v), c.cfg.ContentFormat); text != "" {
 					parts = append(parts, text)
 				}
 			}
 		}
-		contentText = strings.Join(parts, "\n")
+		sep := "\n"
+		if c.cfg.ContentFormat == restAPIContentFormatMarkdown {
+			sep = "\n\n"
+		}
+		contentText = strings.Join(parts, sep)
 	}
 	blob := []byte(contentText)
 
@@ -1481,25 +1697,37 @@ func (c *RestAPIConnector) itemToDocument(item map[string]any) (SourceDocument, 
 		updatedAt = &now
 	}
 
-	sem := rawID
-	if len(c.cfg.ContentFields) > 0 {
-		sem = restAPIValueText(extractRestAPIField(item, c.cfg.ContentFields[0]))
+	sem := ""
+	if c.cfg.TitleField != "" {
+		if v := extractRestAPIField(item, c.cfg.TitleField); v != nil {
+			sem = restAPIStripHTML(restAPIValueText(v))
+		}
 	}
-	sem = restAPIStripHTML(sem)
+	if strings.TrimSpace(sem) == "" {
+		if len(c.cfg.ContentFields) > 0 {
+			sem = restAPIStripHTML(restAPIValueText(extractRestAPIField(item, c.cfg.ContentFields[0])))
+		}
+		if strings.TrimSpace(sem) == "" {
+			sem = restAPIStripHTML(rawID)
+		}
+	}
 	sem = strings.ReplaceAll(sem, "\n", " ")
 	sem = strings.ReplaceAll(sem, "\r", " ")
 	sem = strings.TrimSpace(sem)
-	if len(sem) > 100 {
-		sem = sem[:100]
-	}
+	sem = truncateRunes(sem, 100)
 	if sem == "" {
 		sem = docID
+	}
+
+	ext := ".txt"
+	if c.cfg.ContentFormat == restAPIContentFormatMarkdown {
+		ext = ".md"
 	}
 
 	return SourceDocument{
 		SourceID:           docID,
 		SemanticIdentifier: sem,
-		Extension:          ".txt",
+		Extension:          ext,
 		Blob:               blob,
 		UpdatedAt:          *updatedAt,
 		SizeBytes:          int64(len(blob)),
@@ -1519,18 +1747,29 @@ func (c *RestAPIConnector) renderContentTemplate(item map[string]any) string {
 		}
 		seen[field] = true
 		if v := c.getTypedFieldValue(field, item); v != nil {
-			values[restAPIFieldToTemplateName(field)] = coerceRestAPIToText(v)
+			raw := coerceRestAPIToText(v)
+			if c.cfg.ContentFormat == restAPIContentFormatMarkdown {
+				raw = formatRestAPIFieldContent(raw, c.cfg.ContentFormat)
+			}
+			values[restAPIFieldToTemplateName(field)] = raw
 		}
 	}
 	rendered, ok := renderRestAPITemplateSafeMap(c.cfg.ContentTemplate, values)
 	if !ok {
 		parts := []string{}
 		for _, field := range c.cfg.ContentFields {
-			if p := coerceRestAPIToText(c.getTypedFieldValue(field, item)); p != "" {
+			if p := formatRestAPIFieldContent(coerceRestAPIToText(c.getTypedFieldValue(field, item)), c.cfg.ContentFormat); p != "" {
 				parts = append(parts, p)
 			}
 		}
-		rendered = strings.Join(parts, "\n")
+		sep := "\n"
+		if c.cfg.ContentFormat == restAPIContentFormatMarkdown {
+			sep = "\n\n"
+		}
+		return strings.TrimSpace(strings.Join(parts, sep))
+	}
+	if c.cfg.ContentFormat == restAPIContentFormatMarkdown {
+		return strings.TrimSpace(rendered)
 	}
 	return restAPIStripHTML(rendered)
 }
@@ -1991,6 +2230,80 @@ func restAPISyncCheckpoint(position *restAPISyncCursor, doc SourceDocument) *Syn
 	}
 }
 
+func (s *restAPISyncSession) itemsToDocuments(ctx context.Context, items []map[string]any) ([]SourceDocument, error) {
+	candidates := make([]SourceDocument, 0, len(items))
+	if s.connector.cfg.DetailURL == "" {
+		for _, item := range items {
+			doc, err := s.connector.itemToDocument(item)
+			if err != nil {
+				continue
+			}
+			if !s.fromBeginning && s.windowStart != nil {
+				if !restAPIDocInTimeWindow(doc.UpdatedAt, *s.windowStart, s.windowEnd) {
+					continue
+				}
+			}
+			candidates = append(candidates, doc)
+		}
+		return s.filterResumedDocuments(candidates)
+	}
+
+	preResumeByID := s.resumeSourceID != "" && s.connector.cfg.IDField != ""
+	if preResumeByID {
+		if s.resumePosition == nil || !restAPISyncCursorPositionEqual(s.iterator.currentPagePosition(), s.resumePosition) {
+			return nil, fmt.Errorf("rest api sync resume page no longer matches checkpoint: %w", ErrSyncResumeInvalid)
+		}
+	}
+
+	for _, item := range items {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if preResumeByID && s.resumeSourceID != "" {
+			_, preDocID := s.connector.computeItemIDs(item)
+			if preDocID == s.resumeSourceID {
+				s.resumePosition = nil
+				s.resumeSourceID = ""
+			}
+			continue
+		}
+		if !s.fromBeginning && s.windowStart != nil {
+			if listTS := s.connector.extractTimestamp(item); listTS != nil && !restAPIDocInTimeWindow(*listTS, *s.windowStart, s.windowEnd) {
+				continue
+			}
+		}
+
+		merged, err := s.connector.fetchDetailAndMerge(ctx, item)
+		if err != nil {
+			var (
+				credErr *ConnectorMissingCredentialError
+				rateErr *RateLimitTriedTooManyTimesError
+			)
+			if ctx.Err() != nil || errors.As(err, &credErr) || errors.As(err, &rateErr) {
+				return nil, err
+			}
+			common.Warn("rest_api: skipping item after detail fetch failed", zap.Error(err))
+			continue
+		}
+
+		doc, err := s.connector.itemToDocument(merged)
+		if err != nil {
+			continue
+		}
+		if !s.fromBeginning && s.windowStart != nil {
+			if !restAPIDocInTimeWindow(doc.UpdatedAt, *s.windowStart, s.windowEnd) {
+				continue
+			}
+		}
+		candidates = append(candidates, doc)
+	}
+
+	if preResumeByID && s.resumeSourceID != "" {
+		return nil, fmt.Errorf("rest api resume anchor %q was not found on the checkpoint page: %w", s.resumeSourceID, ErrSyncResumeInvalid)
+	}
+	return s.filterResumedDocuments(candidates)
+}
+
 // NextBatch returns the next batch of source documents. The batch checkpoint
 // points back to the page of its last document, so a retried task re-fetches
 // that page and skips through the saved source anchor.
@@ -2003,21 +2316,7 @@ func (s *restAPISyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 		if items == nil {
 			break
 		}
-		candidates := make([]SourceDocument, 0, len(items))
-		for _, item := range items {
-			doc, err := s.connector.itemToDocument(item)
-			if err != nil {
-				// Items that fail conversion are skipped with a warning.
-				continue
-			}
-			if !s.fromBeginning && s.windowStart != nil {
-				if !restAPIDocInTimeWindow(doc.UpdatedAt, *s.windowStart, s.windowEnd) {
-					continue
-				}
-			}
-			candidates = append(candidates, doc)
-		}
-		candidates, err = s.filterResumedDocuments(candidates)
+		candidates, err := s.itemsToDocuments(ctx, items)
 		if err != nil {
 			return SyncBatch{}, err
 		}

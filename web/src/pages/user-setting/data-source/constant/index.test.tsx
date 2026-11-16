@@ -18,6 +18,7 @@ import type { TFunction } from 'i18next';
 import { FormFieldType } from '@/components/dynamic-form';
 import { buildGithubActionsWorkflowYaml } from './github-workflow-template';
 import {
+  DataSourceFeatureVisibilityMap,
   DataSourceFormDefaultValues,
   DataSourceKey,
   generateDataSourceInfo,
@@ -453,5 +454,77 @@ describe('GitHub data source folder sync & CI/CD workflow guide', () => {
     expect(yaml).toContain("RAGFLOW_BASE_URL: 'https://faq.demego.vn'");
     expect(yaml).toContain('/api/v1/datasets/${RAGFLOW_DATASET_ID}/documents');
     expect(yaml).toContain('/api/v1/datasets/${RAGFLOW_DATASET_ID}/chunks');
+  });
+});
+
+describe('REST API data source master-detail & markdown options', () => {
+  it('registers syncDeletedFiles visibility, default values, and conditional fields cleanly', () => {
+    expect(
+      DataSourceFeatureVisibilityMap[DataSourceKey.REST_API]?.syncDeletedFiles,
+    ).toBe(true);
+
+    expect(DataSourceFormDefaultValues[DataSourceKey.REST_API].config).toMatchObject({
+      detail_url: '',
+      detail_response_path: '',
+      title_field: '',
+      content_format: 'text',
+      content_template: '',
+    });
+
+    const fields = getDataSourceFieldsWithExtras(
+      translate,
+      DataSourceKey.REST_API,
+    ) as Array<{
+      name: string;
+      shouldRender?: (values: any) => boolean;
+    }>;
+
+    const names = fields.map((f) => f.name);
+    expect(new Set(names).size).toBe(names.length);
+
+    for (const expectedName of [
+      'config.detail_url',
+      'config.title_field',
+      'config.content_format',
+      'config.content_template',
+      'config.pagination_config.page_param',
+      'config.pagination_config.page_size_param',
+      'config.pagination_config.page_size',
+      'config.detail_response_path',
+    ]) {
+      expect(names).toContain(expectedName);
+    }
+
+    const pageParam = fields.find(
+      (f) => f.name === 'config.pagination_config.page_param',
+    );
+    const pageSizeParam = fields.find(
+      (f) => f.name === 'config.pagination_config.page_size_param',
+    );
+    const pageSize = fields.find(
+      (f) => f.name === 'config.pagination_config.page_size',
+    );
+    const detailResponsePath = fields.find(
+      (f) => f.name === 'config.detail_response_path',
+    );
+
+    expect(
+      pageParam?.shouldRender?.({ config: { pagination_type: 'page' } }),
+    ).toBe(true);
+    expect(
+      pageParam?.shouldRender?.({ config: { pagination_type: 'offset' } }),
+    ).toBe(false);
+    expect(
+      pageSizeParam?.shouldRender?.({ config: { pagination_type: 'page' } }),
+    ).toBe(true);
+    expect(
+      pageSize?.shouldRender?.({ config: { pagination_type: 'page' } }),
+    ).toBe(true);
+    expect(
+      detailResponsePath?.shouldRender?.({ config: { show_advanced: false } }),
+    ).toBe(false);
+    expect(
+      detailResponsePath?.shouldRender?.({ config: { show_advanced: true } }),
+    ).toBe(true);
   });
 });

@@ -745,6 +745,11 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       dataSource: 'Data source',
       linkSourceSetTip: 'Manage data source linkage with this dataset',
       linkDataSource: 'Link data source',
+      dataSourceSyncFailedBanner:
+        'Sync failed for data source: {{names}}. Automatic retry is scheduled, please check configuration or logs.',
+      dataSourceSyncStoppedBanner:
+        'Sync is paused/stopped for data source: {{names}}.',
+      viewDataSourceSettings: 'Configure',
       deleteGenerateModalContent: `
         <p>Deleting the generated <strong class='text-text-primary'>{{type}}</strong>  results
         will remove all derived entities and relationships from this dataset.
@@ -1504,6 +1509,15 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       dataSourceFieldRequestDelay: 'Request Delay (seconds)',
       dataSourceFieldPollTimestampField: 'Poll Timestamp Field',
       dataSourceFieldRequestBody: 'Request Body (POST) JSON',
+      dataSourceFieldDetailUrl: 'Detail URL Template (Optional)',
+      dataSourceFieldDetailResponsePath: 'Detail Response Path',
+      dataSourceFieldTitleField: 'Document Title Field',
+      dataSourceFieldContentFormat: 'Content Format',
+      dataSourceOptionContentFormatText: 'Plain Text (.txt)',
+      dataSourceOptionContentFormatMarkdown: 'HTML to Markdown (.md)',
+      dataSourceFieldContentTemplate: 'Content Template (Optional)',
+      dataSourceFieldPageParam: 'Page Param',
+      dataSourceFieldPageSizeParam: 'Page Size Param',
       dataSourceFieldConfluenceUsername: 'Confluence Username',
       dataSourceFieldConfluenceAccessToken: 'Confluence Access Token',
       dataSourceFieldWikiBaseUrl: 'Wiki Base URL',
@@ -1566,7 +1580,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       dataSourceOptionArticles: 'Articles',
       dataSourceOptionTickets: 'Tickets',
       dataSourceOptionNone: 'None',
-      dataSourceOptionApiKeyHeader: 'API Key (Header)',
+      dataSourceOptionXApiKey: 'X-API-KEY (Header)',
+      dataSourceOptionApiKeyHeader: 'API Key (Custom Header)',
       dataSourceOptionBearerToken: 'Bearer Token',
       dataSourceOptionBasicAuth: 'Basic Auth',
       dataSourceOptionPage: 'Page',
@@ -2116,6 +2131,16 @@ Example: Virtual Hosted Style`,
         'Optional JSON body to send for POST requests. Used together with query params and pagination.',
       restApiRequestDelayTip:
         'Delay in seconds between consecutive page requests. Helps avoid rate limiting from the API. Set to 0 to disable.',
+      restApiDetailUrlTip:
+        'Optional endpoint template to fetch full item details (e.g. https://api.example.com/posts/{_id}). Placeholders like {_id} are replaced from each list item.',
+      restApiDetailResponsePathTip:
+        'Optional field name or JSONPath to unwrap the detail object from the Detail URL response (leave empty if the response root or data/post/item holds the object).',
+      restApiTitleFieldTip:
+        'Optional field path in each item used as the document title/filename (e.g. title.vi).',
+      restApiContentFormatTip:
+        'Choose HTML to Markdown (.md) when API content fields contain HTML markup so headings, tables, and links are preserved cleanly.',
+      restApiContentTemplateTip:
+        'Optional template to format document content using {field_name} placeholders (dots in field paths become underscores, e.g. {title_vi}, {content_vi}).',
       restApiValidationApiKeyRequired:
         'API Key is required when Auth Type is API Key (Header).',
       restApiValidationApiKeyHeaderNameRequired:

@@ -419,14 +419,6 @@ func dingTalkAITableFingerprint(blob []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func truncateRunes(value string, max int) string {
-	runes := []rune(value)
-	if len(runes) <= max {
-		return value
-	}
-	return string(runes[:max])
-}
-
 type dingTalkAITableSheet struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`

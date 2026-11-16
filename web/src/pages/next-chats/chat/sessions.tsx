@@ -39,8 +39,15 @@ import { ConversationDropdown } from './conversation-dropdown';
 type SessionProps = Pick<
   ReturnType<typeof useHandleClickConversationCard>,
   'handleConversationCardClick'
->;
-export function Sessions({ handleConversationCardClick }: SessionProps) {
+> & {
+  className?: string;
+  onClose?: () => void;
+};
+export function Sessions({
+  handleConversationCardClick,
+  className,
+  onClose,
+}: SessionProps) {
   const { t } = useTranslation();
   const {
     list: conversationList,
@@ -193,7 +200,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
 
   return (
     <aside
-      className="p-5 w-[296px] flex flex-col"
+      className={cn('p-5 w-[296px] flex flex-col', className)}
       role="complementary"
       data-testid="chat-detail-sessions"
     >
@@ -234,7 +241,10 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
           variant="transparent"
           size="icon-sm"
           className="border-0 ml-auto"
-          onClick={switchVisible}
+          onClick={() => {
+            switchVisible();
+            onClose?.();
+          }}
           data-testid="chat-detail-sessions-close"
         >
           <LucidePanelLeftClose />
@@ -361,7 +371,10 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
                   <button
                     type="button"
                     className="focus-visible:outline-none px-3 py-2 text-left flex-1 truncate"
-                    onClick={() => handleConversationCardClick(x.id, x.is_new)}
+                    onClick={() => {
+                      handleConversationCardClick(x.id, x.is_new);
+                      onClose?.();
+                    }}
                     data-testid="chat-detail-session-item"
                     data-session-id={x.id}
                   >

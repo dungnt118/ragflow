@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import {
   useFetchSessionList,
@@ -10,7 +11,12 @@ import { IClientConversation } from '@/interfaces/database/chat';
 import { RootLayoutContainer } from '@/layouts/root-layout';
 import { cn } from '@/lib/utils';
 import { isEmpty } from 'lodash';
-import { Logs, LucideArrowBigLeft, LucideArrowUpRight } from 'lucide-react';
+import {
+  History,
+  Logs,
+  LucideArrowBigLeft,
+  LucideArrowUpRight,
+} from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
@@ -105,30 +111,63 @@ export default function Chat() {
     );
   }
 
+  const [mobileSessionsOpen, setMobileSessionsOpen] = useState(false);
+
   return (
     <RootLayoutContainer>
       <section className="h-full flex flex-col" data-testid="chat-detail">
-        <article className="flex flex-1 min-h-0 pb-9">
-          <Sessions
-            handleConversationCardClick={handleConversationCardClick}
-          ></Sessions>
+        <article className="flex flex-1 min-h-0 pb-2 md:pb-9">
+          <div className="hidden md:flex shrink-0">
+            <Sessions
+              handleConversationCardClick={handleConversationCardClick}
+            />
+          </div>
+
+          <Sheet open={mobileSessionsOpen} onOpenChange={setMobileSessionsOpen}>
+            <SheetContent
+              side="left"
+              className="w-[85vw] max-w-sm p-0 flex flex-col"
+              closeIcon={false}
+            >
+              <Sessions
+                handleConversationCardClick={(id, isNew) => {
+                  handleConversationCardClick(id, isNew);
+                  setMobileSessionsOpen(false);
+                }}
+                onClose={() => setMobileSessionsOpen(false)}
+                className="w-full h-full p-4"
+              />
+            </SheetContent>
+          </Sheet>
 
           <Card className="flex-1 min-w-0 bg-transparent border-none shadow-none h-full">
             <CardContent className="flex p-0 h-full">
               <Card className="flex flex-col flex-1 bg-transparent min-w-0 overflow-hidden">
                 <CardHeader
-                  className={cn('p-5', {
+                  className={cn('p-3 sm:p-5', {
                     'border-b-0.5 border-border-button': hasSingleChatBox,
                   })}
                 >
                   <CardTitle className="flex justify-between items-center text-base gap-2">
-                    <div className="truncate">{currentConversationName}</div>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="md:hidden shrink-0"
+                        onClick={() => setMobileSessionsOpen(true)}
+                        aria-label="Danh sách hội thoại"
+                      >
+                        <History className="size-4" />
+                      </Button>
+                      <div className="truncate">{currentConversationName}</div>
+                    </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 sm:gap-2">
                       {chatId && (
                         <Button
                           variant="outline"
                           size="sm"
+                          className="hidden sm:inline-flex"
                           onClick={navigateToChatLogs(chatId)}
                           data-testid="chat-header-feedback-logs-btn"
                         >
@@ -140,9 +179,12 @@ export default function Chat() {
                         variant="ghost"
                         onClick={switchDebugMode}
                         data-testid="chat-detail-multimodel-toggle"
+                        className="text-xs sm:text-sm px-2 sm:px-3"
                       >
-                        <LucideArrowUpRight />
-                        {t('chat.multipleModels')}
+                        <LucideArrowUpRight className="size-4 sm:size-auto" />
+                        <span className="hidden sm:inline">
+                          {t('chat.multipleModels')}
+                        </span>
                       </Button>
                     </div>
                   </CardTitle>

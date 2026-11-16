@@ -384,6 +384,11 @@ export default {
       paddleocrAlgorithmTip: 'Thuật toán được sử dụng để xử lý PaddleOCR',
       paddleocrSelectAlgorithm: 'Chọn thuật toán',
       paddleocrModelNamePlaceholder: 'Ví dụ: paddleocr-môi-trường-1',
+      dataSourceSyncFailedBanner:
+        'Nguồn dữ liệu bị lỗi đồng bộ: {{names}}. Hệ thống vẫn tự động lên lịch thử lại, vui lòng kiểm tra cấu hình hoặc log.',
+      dataSourceSyncStoppedBanner:
+        'Nguồn dữ liệu đang tạm dừng/ngừng đồng bộ: {{names}}.',
+      viewDataSourceSettings: 'Cấu hình',
     },
     chunk: {
       chunk: 'Khối',
@@ -763,6 +768,8 @@ export default {
         'Nhánh cần đồng bộ tệp (ví dụ: main). Để trống để dùng nhánh mặc định của repository.',
       dataSourceOptionEntireRepository: 'Toàn bộ Repository',
       dataSourceOptionSpecificFolder: 'Thư mục chỉ định',
+      dataSourceOptionXApiKey: 'X-API-KEY (Tiêu đề Header)',
+      dataSourceOptionApiKeyHeader: 'Khóa API (Header tùy chỉnh)',
       dataSourceFieldFolderPath: 'Đường dẫn thư mục (Folder Path)',
       dataSourceFieldFolderPathTip:
         'Đường dẫn thư mục tương đối trong repository cần đồng bộ đệ quy (ví dụ: docs hoặc docs/api). Mọi tệp sẽ tự động được gắn meta_fields.web_url trỏ tới GitHub và tự động lập chỉ mục khi liên kết Dataset.',
@@ -896,6 +903,26 @@ export default {
         'Dừng ngay chu kỳ đồng bộ đang chạy dở và bắt đầu chu kỳ quét mới ngay lập tức với cấu hình mới.',
       conflictModalCancel: 'Hủy bỏ',
       conflictModalConfirm: 'Xác nhận áp dụng',
+      dataSourceFieldDetailUrl: 'URL Chi tiết - Template (Tùy chọn)',
+      dataSourceFieldDetailResponsePath: 'Đường dẫn dữ liệu chi tiết',
+      dataSourceFieldTitleField: 'Trường Tiêu đề tài liệu',
+      dataSourceFieldContentFormat: 'Định dạng nội dung',
+      dataSourceOptionContentFormatText: 'Văn bản thuần (.txt)',
+      dataSourceOptionContentFormatMarkdown: 'HTML sang Markdown (.md)',
+      dataSourceFieldContentTemplate: 'Mẫu nội dung (Tùy chọn)',
+      dataSourceFieldPageParam: 'Tham số trang (Page Param)',
+      dataSourceFieldPageSizeParam: 'Tham số kích thước trang (Page Size Param)',
+      dataSourceFieldPageSize: 'Số mục mỗi trang (Page Size)',
+      restApiDetailUrlTip:
+        'Tùy chọn: Mẫu endpoint để lấy chi tiết từng mục (ví dụ: https://api.example.com/posts/{_id}). Các biến dạng {_id} sẽ được thay bằng giá trị từ danh sách.',
+      restApiDetailResponsePathTip:
+        'Tùy chọn: Tên trường hoặc JSONPath để bóc tách object chi tiết từ phản hồi Detail URL (để trống nếu dữ liệu nằm ở root hoặc trong data/post/item).',
+      restApiTitleFieldTip:
+        'Tùy chọn: Đường dẫn trường trong mỗi mục dùng làm tiêu đề/tên tệp tài liệu (ví dụ: title.vi).',
+      restApiContentFormatTip:
+        'Chọn HTML sang Markdown (.md) khi nội dung API chứa thẻ HTML để giữ nguyên tiêu đề, bảng biểu và liên kết.',
+      restApiContentTemplateTip:
+        'Tùy chọn: Mẫu định dạng nội dung tài liệu bằng biến {tên_trường} (dấu chấm trong đường dẫn đổi thành gạch dưới, ví dụ: {title_vi}, {content_vi}).',
     },
     message: {
       registered: 'Đã đăng ký!',

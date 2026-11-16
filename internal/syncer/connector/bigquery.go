@@ -717,8 +717,8 @@ func (c *BigQueryConnector) rowToSourceDocument(row map[string]any, schema []big
 			semanticID = strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(bigQueryValueString(value), "\n", " "), "\r", " "))
 			if semanticID == "" {
 				semanticID = "bigquery_record"
-			} else if len(semanticID) > 100 {
-				semanticID = semanticID[:100]
+			} else {
+				semanticID = truncateRunes(semanticID, 100)
 			}
 		}
 	}

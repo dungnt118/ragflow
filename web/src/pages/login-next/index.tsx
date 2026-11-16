@@ -70,7 +70,7 @@ function LoginFormContent({
           {title === 'login' ? t('loginTitle') : t('signUpTitle')}
         </h2>
       </div>
-      <div className=" w-full max-w-[540px] bg-bg-component backdrop-blur-sm rounded-2xl shadow-xl pt-14 pl-10 pr-10 pb-2 border border-border-button ">
+      <div className="w-full max-w-[540px] bg-bg-component backdrop-blur-sm rounded-2xl shadow-xl pt-6 sm:pt-14 px-5 sm:px-10 pb-4 border border-border-button">
         {!disablePasswordLogin && (
           <Form {...form}>
             <form
@@ -376,22 +376,24 @@ const Login = () => {
       <div className=" h-[inherit] relative overflow-auto">
         <BgSvg isPaused />
 
-        <div className="z-20 absolute top-3 flex flex-col items-center mb-12 w-full text-text-primary">
-          <div className="flex items-center mb-4 w-full pl-10 pt-10 ">
-            <div className="w-12 h-12 p-2 rounded-lg flex items-center justify-center mr-3">
+        <div className="z-20 relative md:absolute md:top-3 flex flex-col items-center mb-6 md:mb-12 w-full text-text-primary">
+          <div className="flex items-center mb-2 md:mb-4 w-full pl-5 md:pl-10 pt-5 md:pt-10">
+            <div className="w-10 h-10 md:w-12 md:h-12 p-2 rounded-lg flex items-center justify-center mr-2 md:mr-3">
               <img
                 src={'/logo.svg'}
                 alt="logo"
-                className="size-8 mr-[12] cursor-pointer"
+                className="size-7 md:size-8 mr-[12] cursor-pointer"
               />
             </div>
-            <div className="text-xl font-bold self-center">RAGFlow</div>
+            <div className="text-lg md:text-xl font-bold self-center">
+              RAGFlow
+            </div>
           </div>
-          <h1 className="text-[36px] font-medium  text-center mb-2">
+          <h1 className="text-2xl md:text-[36px] font-medium text-center mb-2 px-4">
             {t('title')}
           </h1>
         </div>
-        <div className="relative z-10 flex flex-col items-center justify-center min-h-[1050px] px-4 sm:px-6 lg:px-8">
+        <div className="relative z-10 flex flex-col items-center justify-center min-h-[620px] md:min-h-[1050px] px-4 sm:px-6 lg:px-8 pb-10">
           {/* Login Form */}
           <FlipCard3D isLoginPage={isLoginPage}>
             <LoginFormContent

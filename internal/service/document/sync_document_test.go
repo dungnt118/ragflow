@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -398,5 +399,67 @@ func TestSyncDocumentAcknowledgesParseEnqueueAfterCancellation(t *testing.T) {
 	result, err = svc.Upsert(t.Context(), input)
 	if err != nil || result.Action != service.DocumentActionSkipped || len(publisher.messages) != 1 {
 		t.Fatalf("completed revision retried enqueue: result = %+v err = %v publications = %d", result, err, len(publisher.messages))
+	}
+}
+
+func TestSyncDocumentFilenameUTF8Truncation(t *testing.T) {
+	cases := []struct {
+		name      string
+		semantic  string
+		extension string
+		fallback  string
+	}{
+		{
+			name:      "2-byte Vietnamese rune at 251-byte boundary",
+			semantic:  strings.Repeat("a", 250) + "á" + strings.Repeat("b", 10),
+			extension: ".txt",
+			fallback:  "doc-1",
+		},
+		{
+			name:      "3-byte Vietnamese rune at 251-byte boundary",
+			semantic:  strings.Repeat("a", 249) + "ấ" + strings.Repeat("b", 10),
+			extension: ".txt",
+			fallback:  "doc-2",
+		},
+		{
+			name:      "100 Vietnamese 3-byte runes exceeding 255 bytes",
+			semantic:  strings.Repeat("ấ", 100),
+			extension: ".txt",
+			fallback:  "doc-3",
+		},
+		{
+			name:      "orphaned leading byte 0xC3 in raw semantic identifier",
+			semantic:  " câu hỏi tiếng việt\xc3",
+			extension: ".txt",
+			fallback:  "doc-4",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := syncDocumentFilename(tc.semantic, tc.extension, tc.fallback)
+			if !utf8.ValidString(got) {
+				t.Fatalf("syncDocumentFilename produced invalid UTF-8: %q", got)
+			}
+			if len(got) > 255 {
+				t.Fatalf("len(syncDocumentFilename) = %d, want <= 255", len(got))
+			}
+			if !strings.HasSuffix(got, ".txt") {
+				t.Fatalf("syncDocumentFilename = %q, want .txt suffix", got)
+			}
+		})
+	}
+
+	svc, db, _, input := setupSyncDocumentTest(t, false)
+	input.SourceDocument.SemanticIdentifier = strings.Repeat("ấ", 100)
+	if _, err := svc.Upsert(t.Context(), input); err != nil {
+		t.Fatalf("Upsert with multi-byte Vietnamese SemanticIdentifier: %v", err)
+	}
+	doc, err := dao.NewDocumentDAO().GetByID(t.Context(), db, input.DocumentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Name == nil || !utf8.ValidString(*doc.Name) || len(*doc.Name) > 255 || !strings.HasSuffix(*doc.Name, ".txt") {
+		t.Fatalf("stored document name = %v, want valid UTF-8 <= 255 bytes ending with .txt", doc.Name)
 	}
 }

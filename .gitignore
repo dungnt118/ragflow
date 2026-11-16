@@ -225,6 +225,7 @@ backup
 # Added by cargo
 
 /target
+reports
 
 # Do not include in PR (local dev / build artifacts / working notes)
 ragflow.egg-info/

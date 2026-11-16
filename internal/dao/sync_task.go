@@ -149,7 +149,7 @@ func (d *SyncTaskDAO) ListScheduledTasks(ctx context.Context, limit int, cursor 
 		Joins("JOIN connector ON sync_logs.connector_id = connector.id").
 		Joins("JOIN connector2kb ON sync_logs.connector_id = connector2kb.connector_id AND sync_logs.kb_id = connector2kb.kb_id").
 		Joins("JOIN knowledgebase ON sync_logs.kb_id = knowledgebase.id").
-		Where("sync_logs.status = ? AND connector.status = ? AND sync_logs.task_type IN ?", SyncStatusSchedule, SyncStatusSchedule, []string{TaskTypeSync, TaskTypePrune})
+		Where("sync_logs.status = ? AND connector.status IN ? AND sync_logs.task_type IN ?", SyncStatusSchedule, []string{SyncStatusSchedule, SyncStatusFail}, []string{TaskTypeSync, TaskTypePrune})
 	if cursor != nil {
 		query = query.Where("COALESCE(sync_logs.update_time, 0) < ? OR (COALESCE(sync_logs.update_time, 0) = ? AND sync_logs.id < ?)", cursor.UpdateTime, cursor.UpdateTime, cursor.ID)
 	}
@@ -180,7 +180,7 @@ func (d *SyncTaskDAO) GetScheduledTask(ctx context.Context, taskID string) (Sche
 		Joins("JOIN connector ON sync_logs.connector_id = connector.id").
 		Joins("JOIN connector2kb ON sync_logs.connector_id = connector2kb.connector_id AND sync_logs.kb_id = connector2kb.kb_id").
 		Joins("JOIN knowledgebase ON sync_logs.kb_id = knowledgebase.id").
-		Where("sync_logs.id = ? AND sync_logs.status = ? AND connector.status = ? AND sync_logs.task_type IN ?", taskID, SyncStatusSchedule, SyncStatusSchedule, []string{TaskTypeSync, TaskTypePrune}).
+		Where("sync_logs.id = ? AND sync_logs.status = ? AND connector.status IN ? AND sync_logs.task_type IN ?", taskID, SyncStatusSchedule, []string{SyncStatusSchedule, SyncStatusFail}, []string{TaskTypeSync, TaskTypePrune}).
 		First(&row).Error; err != nil {
 		return ScheduledSyncTask{}, err
 	}
@@ -509,8 +509,64 @@ func (d *SyncTaskDAO) RecoverRunning(ctx context.Context) (int64, error) {
 	})
 }
 
+// ScheduleNextAfterFailure creates the next periodic SCHEDULE task after a task
+// exhausts its short-term retries and transitions to SyncStatusFail, keeping the
+// connector's status as SyncStatusFail so UI warnings remain visible until the
+// next cycle succeeds. PollRangeStart and FromBeginning are preserved so the
+// next run catches up over the failed window.
+func (d *SyncTaskDAO) ScheduleNextAfterFailure(ctx context.Context, taskContext SyncTaskContext) (string, error) {
+	switch taskContext.Task.TaskType {
+	case TaskTypeSync:
+		if taskContext.Connector.RefreshFreq <= 0 {
+			return "", nil
+		}
+	case TaskTypePrune:
+		if !utility.ConfigBool(taskContext.Connector.Config, "sync_deleted_files") || taskContext.Connector.PruneFreq <= 0 {
+			return "", nil
+		}
+	default:
+		return "", nil
+	}
+
+	var fromBeginning bool
+	if taskContext.Task.FromBeginning != nil && *taskContext.Task.FromBeginning == "1" {
+		fromBeginning = true
+	}
+	var pollRangeStart *time.Time
+	if taskContext.Task.PollRangeStart != nil {
+		if t := taskContext.Task.PollRangeStart.Time(); !t.IsZero() {
+			pollRangeStart = &t
+		}
+	}
+
+	var nextTaskID string
+	err := d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var connector entity.Connector
+		if err := tx.WithContext(ctx).Select("id, status").Where("id = ?", taskContext.Connector.ID).First(&connector).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		if connector.Status == SyncStatusCancel {
+			return nil
+		}
+		id, err := insertScheduledTaskTx(ctx, tx, taskContext.Connector.ID, taskContext.Knowledgebase.ID, taskContext.Task.TaskType, fromBeginning, pollRangeStart, taskContext.Task.TotalDocsIndexed, false)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		nextTaskID = id
+		return err
+	})
+	return nextTaskID, err
+}
+
 // createScheduledTask creates the next Python-compatible scheduled task.
 func createScheduledTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, taskType string, fromBeginning bool, pollRangeStart *time.Time, totalDocsIndexed int64) (string, error) {
+	return insertScheduledTaskTx(ctx, tx, connectorID, kbID, taskType, fromBeginning, pollRangeStart, totalDocsIndexed, true)
+}
+
+func insertScheduledTaskTx(ctx context.Context, tx *gorm.DB, connectorID, kbID, taskType string, fromBeginning bool, pollRangeStart *time.Time, totalDocsIndexed int64, updateConnectorStatus bool) (string, error) {
 	var lockRow entity.Connector2Kb
 	query := tx.WithContext(ctx)
 	if tx.Dialector.Name() != "sqlite" {
@@ -540,10 +596,12 @@ func createScheduledTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, ta
 	}
 
 	now := time.Now().Local()
-	if err := tx.WithContext(ctx).Model(&entity.Connector{}).
-		Where("id = ?", connectorID).
-		Update("status", SyncStatusSchedule).Error; err != nil {
-		return "", err
+	if updateConnectorStatus {
+		if err := tx.WithContext(ctx).Model(&entity.Connector{}).
+			Where("id = ?", connectorID).
+			Update("status", SyncStatusSchedule).Error; err != nil {
+			return "", err
+		}
 	}
 	taskID := common.GenerateToken()
 	return taskID, tx.WithContext(ctx).Create(&entity.SyncLogs{

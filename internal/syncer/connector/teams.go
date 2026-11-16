@@ -795,8 +795,8 @@ func (m teamsMessage) toSourceDocument(team teamsTeam, channel teamsChannel, rep
 	blob := []byte(joined)
 
 	snippet := strings.TrimSpace(strings.ReplaceAll(joined, "\n", " "))
-	if len(snippet) > 50 {
-		snippet = strings.TrimRight(snippet[:50], " ") + "..."
+	if runes := []rune(snippet); len(runes) > 50 {
+		snippet = strings.TrimRight(string(runes[:50]), " ") + "..."
 	}
 	semanticIdentifier := fmt.Sprintf("%s: %s", channel.DisplayName, snippet)
 	if snippet == "" {

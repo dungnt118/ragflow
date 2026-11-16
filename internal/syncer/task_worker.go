@@ -199,6 +199,13 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 		logSyncRetry(taskContext, attempts, failed, maxRetries, err)
 		if !failed {
 			w.scheduleRetry(ctx, taskContext.Task.ID, transientRetryDelay(attempts))
+		} else {
+			nextTaskID, nextErr := w.taskDAO.ScheduleNextAfterFailure(ctx, taskContext)
+			if nextErr != nil {
+				common.Warn("syncer schedule next task after failure failed", zap.String("task_id", taskContext.Task.ID), zap.Error(nextErr))
+			} else if nextTaskID != "" {
+				w.scheduleNext(ctx, nextTaskID)
+			}
 		}
 		ackEnvelope(envelope)
 		return

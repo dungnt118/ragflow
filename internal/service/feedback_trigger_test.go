@@ -424,3 +424,61 @@ func TestFeedbackAuditService_SummarizeFilterAndKPI(t *testing.T) {
 	}
 }
 
+func TestFeedbackAuditInteractionKPIAndFilter(t *testing.T) {
+	items := []UnifiedFeedbackSessionItem{
+		{
+			ID:         "sess-engaged-1",
+			SessionID:  "sess-engaged-1",
+			SourceType: "chat",
+			Channel:    "widget",
+			Round:      1,
+		},
+		{
+			ID:         "sess-engaged-4",
+			SessionID:  "sess-engaged-4",
+			SourceType: "chat",
+			Channel:    "web",
+			Round:      4,
+		},
+		{
+			ID:         "sess-empty-1",
+			SessionID:  "sess-empty-1",
+			SourceType: "chat",
+			Channel:    "widget",
+			Round:      0,
+		},
+	}
+
+	kpi := computeFeedbackKPISummary(items, nil)
+	if kpi.TotalSessions != 3 || kpi.InteractiveSessions != 2 || kpi.UnengagedSessions != 1 {
+		t.Fatalf("unexpected interaction counts: %#v", kpi)
+	}
+	if kpi.InteractionRate != 66.7 {
+		t.Fatalf("expected InteractionRate=66.7, got %v", kpi.InteractionRate)
+	}
+	if kpi.TotalRounds != 5 || kpi.AvgRounds != 2.5 {
+		t.Fatalf("expected TotalRounds=5 and AvgRounds=2.5 (excluding 0-round sessions), got TotalRounds=%d AvgRounds=%v", kpi.TotalRounds, kpi.AvgRounds)
+	}
+
+	reqInteractive := FeedbackAuditFilterRequest{InteractionStatus: "interactive"}
+	if !matchesFeedbackAuditFilter(items[0], reqInteractive) || !matchesFeedbackAuditFilter(items[1], reqInteractive) {
+		t.Fatalf("expected engaged sessions to match interaction_status=interactive")
+	}
+	if matchesFeedbackAuditFilter(items[2], reqInteractive) {
+		t.Fatalf("expected 0-round session NOT to match interaction_status=interactive")
+	}
+
+	reqNone := FeedbackAuditFilterRequest{InteractionStatus: "none"}
+	if matchesFeedbackAuditFilter(items[0], reqNone) || !matchesFeedbackAuditFilter(items[2], reqNone) {
+		t.Fatalf("expected only 0-round session to match interaction_status=none")
+	}
+
+	reqAll := FeedbackAuditFilterRequest{InteractionStatus: "all"}
+	for _, it := range items {
+		if !matchesFeedbackAuditFilter(it, reqAll) {
+			t.Fatalf("expected session %s to match interaction_status=all", it.ID)
+		}
+	}
+}
+
+

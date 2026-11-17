@@ -22,10 +22,7 @@ import {
 import { Spin } from '@/components/ui/spin';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IAgentLogMessage } from '@/interfaces/database/agent';
-import {
-  IFeedbackConfig,
-  IReferenceObject,
-} from '@/interfaces/database/chat';
+import { IFeedbackConfig, IReferenceObject } from '@/interfaces/database/chat';
 import api from '@/utils/api';
 import { formatDate } from '@/utils/date';
 import { downloadFileFromBlob } from '@/utils/file-util';
@@ -33,6 +30,7 @@ import request from '@/utils/request';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import {
+  Activity,
   AlertTriangle,
   BarChart3,
   Bot,
@@ -73,6 +71,11 @@ export interface ICriterionBreakdownStat {
 
 export interface IFeedbackKPISummary {
   total_sessions: number;
+  interactive_sessions: number;
+  unengaged_sessions: number;
+  interaction_rate: number;
+  avg_rounds: number;
+  total_rounds: number;
   rated_sessions: number;
   rated_messages: number;
   positive_count: number;
@@ -189,6 +192,9 @@ export const SessionFeedbackAuditView: React.FC<
   const [csatFilter, setCsatFilter] = useState<string>('all'); // 'all' | 'low' (<=2) | 'mid' (3) | 'high' (>=4)
   const [channelFilter, setChannelFilter] = useState<string>('all'); // 'all' | 'web' | 'widget' | 'telegram'
   const [criterionFilter, setCriterionFilter] = useState<string>('all'); // 'all' | '<key>:failed' | '<key>:all'
+  const [interactionFilter, setInteractionFilter] = useState<
+    'interactive' | 'all' | 'none'
+  >('interactive');
   const [keywords, setKeywords] = useState<string>('');
   const [currentDate, setCurrentDate] = useState<DateRange>({
     from: getStartOfLast30Days(),
@@ -254,6 +260,10 @@ export const SessionFeedbackAuditView: React.FC<
       }
     }
 
+    if (interactionFilter && interactionFilter !== 'all') {
+      params.interaction_status = interactionFilter;
+    }
+
     if (keywords.trim()) {
       params.keywords = keywords.trim();
     }
@@ -270,6 +280,7 @@ export const SessionFeedbackAuditView: React.FC<
     csatFilter,
     channelFilter,
     criterionFilter,
+    interactionFilter,
     keywords,
     currentDate,
     sortConfig,
@@ -294,6 +305,11 @@ export const SessionFeedbackAuditView: React.FC<
     () =>
       auditData?.kpi || {
         total_sessions: 0,
+        interactive_sessions: 0,
+        unengaged_sessions: 0,
+        interaction_rate: 0,
+        avg_rounds: 0,
+        total_rounds: 0,
         rated_sessions: 0,
         rated_messages: 0,
         positive_count: 0,
@@ -343,6 +359,14 @@ export const SessionFeedbackAuditView: React.FC<
     }));
   };
 
+  const handleInteractionFilterChange = useCallback(
+    (v: 'interactive' | 'all' | 'none') => {
+      setInteractionFilter(v);
+      setPagination((p) => ({ ...p, current: 1 }));
+    },
+    [],
+  );
+
   const handleResetFilters = () => {
     setSourceType(defaultSourceType);
     setAppId(defaultAppId || 'all');
@@ -350,6 +374,7 @@ export const SessionFeedbackAuditView: React.FC<
     setCsatFilter('all');
     setChannelFilter('all');
     setCriterionFilter('all');
+    setInteractionFilter('interactive');
     setKeywords('');
     setCurrentDate({
       from: getStartOfLast30Days(),
@@ -408,7 +433,10 @@ export const SessionFeedbackAuditView: React.FC<
 
       const formatConv = (item: IUnifiedFeedbackSessionItem) => {
         return (item.messages || [])
-          .map((m) => `${m.role === 'assistant' ? 'AI' : 'User'}: ${m.content ?? ''}`)
+          .map(
+            (m) =>
+              `${m.role === 'assistant' ? 'AI' : 'User'}: ${m.content ?? ''}`,
+          )
           .join('\n');
       };
 
@@ -506,7 +534,8 @@ export const SessionFeedbackAuditView: React.FC<
           )}
           {fb.negative_count > 0 && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-rose-500/15 text-rose-400 border border-rose-500/30">
-              <ThumbsDown className="size-3" /> {fb.negative_count} Chưa hài lòng
+              <ThumbsDown className="size-3" /> {fb.negative_count} Chưa hài
+              lòng
             </span>
           )}
           {fb.avg_csat !== undefined && fb.avg_csat !== null && (
@@ -561,7 +590,9 @@ export const SessionFeedbackAuditView: React.FC<
                     : navigateToAgents
                 }
               >
-                {defaultSourceType === 'chat' ? 'Chat Assistant' : t('flow.agent')}
+                {defaultSourceType === 'chat'
+                  ? 'Chat Assistant'
+                  : t('flow.agent')}
               </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
@@ -631,10 +662,12 @@ export const SessionFeedbackAuditView: React.FC<
             <div className="flex items-center justify-between">
               <div className="font-semibold text-sm flex items-center gap-2 text-sky-400">
                 <Code2 className="size-4" />
-                Chuẩn API Thống nhất cho Bên thứ 3 (REST API v1 - Bearer API Key)
+                Chuẩn API Thống nhất cho Bên thứ 3 (REST API v1 - Bearer API
+                Key)
               </div>
               <span className="text-xs text-text-secondary">
-                Đồng bộ 100% bộ lọc & cấu trúc dữ liệu với giao diện Quản trị hiện tại
+                Đồng bộ 100% bộ lọc & cấu trúc dữ liệu với giao diện Quản trị
+                hiện tại
               </span>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 text-xs">
@@ -643,7 +676,8 @@ export const SessionFeedbackAuditView: React.FC<
                   GET /api/v1/feedback/sessions
                 </div>
                 <div className="text-text-secondary mt-0.5">
-                  Truy vấn hợp nhất trên toàn bộ Chat Assistant & Agent (`source_type=all|chat|agent`, `app_id=...`)
+                  Truy vấn hợp nhất trên toàn bộ Chat Assistant & Agent
+                  (`source_type=all|chat|agent`, `app_id=...`)
                 </div>
               </div>
               <div className="p-2 rounded bg-bg-card border border-border-button">
@@ -651,7 +685,8 @@ export const SessionFeedbackAuditView: React.FC<
                   GET /api/v1/chats/:chat_id/feedback-sessions
                 </div>
                 <div className="text-text-secondary mt-0.5">
-                  Truy vấn riêng cho 1 Chat Assistant (gộp cả Web, Telegram & Widget nhúng)
+                  Truy vấn riêng cho 1 Chat Assistant (gộp cả Web, Telegram &
+                  Widget nhúng)
                 </div>
               </div>
               <div className="p-2 rounded bg-bg-card border border-border-button">
@@ -669,9 +704,9 @@ export const SessionFeedbackAuditView: React.FC<
           </div>
         )}
 
-        {/* 4 Unified KPI Cards */}
+        {/* 5 Unified KPI Cards */}
         <div
-          className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4"
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4"
           data-testid="feedback-kpi-cards"
         >
           {/* KPI Card 1: Total & Rated Sessions */}
@@ -679,11 +714,11 @@ export const SessionFeedbackAuditView: React.FC<
             className="rounded-xl border border-border-button bg-bg-card p-4 shadow-sm flex flex-col justify-between"
             data-testid="kpi-card-sessions"
           >
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-medium text-text-secondary uppercase tracking-wider">
                 Phiên có đánh giá / Tổng phiên
               </span>
-              <MessageSquareHeart className="size-5 text-sky-400" />
+              <MessageSquareHeart className="size-5 text-sky-400 shrink-0" />
             </div>
             <div className="mt-3 flex items-baseline gap-2">
               <span className="text-3xl font-bold">{kpi.rated_sessions}</span>
@@ -691,7 +726,7 @@ export const SessionFeedbackAuditView: React.FC<
                 / {kpi.total_sessions} phiên
               </span>
             </div>
-            <div className="mt-3 flex items-center justify-between text-xs text-text-secondary border-t border-border-button pt-2">
+            <div className="mt-3 flex items-center justify-between gap-2 text-xs text-text-secondary border-t border-border-button pt-2">
               <span>Lượt phản hồi đã chấm: {kpi.rated_messages}</span>
               <span>
                 Chat: {kpi.by_source_type?.chat ?? 0} · Agent:{' '}
@@ -700,18 +735,58 @@ export const SessionFeedbackAuditView: React.FC<
             </div>
           </div>
 
-          {/* KPI Card 2: CSAT Score & Star Distribution */}
+          {/* KPI Card 2: Interaction Rate & Avg Rounds */}
+          <div
+            className="rounded-xl border border-border-button bg-bg-card p-4 shadow-sm flex flex-col justify-between"
+            data-testid="kpi-card-interaction"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-text-secondary uppercase tracking-wider">
+                Tỷ lệ Tương tác & Lượt TB
+              </span>
+              <Activity className="size-5 text-cyan-400 shrink-0" />
+            </div>
+            <div className="mt-3 flex items-baseline gap-2 flex-wrap">
+              <span
+                className="text-3xl font-bold text-cyan-400"
+                data-testid="kpi-interaction-rate"
+              >
+                {kpi.total_sessions > 0 ? `${kpi.interaction_rate}%` : '—'}
+              </span>
+              <span
+                className="text-sm text-text-secondary"
+                data-testid="kpi-interaction-ratio"
+              >
+                ({kpi.interactive_sessions} / {kpi.total_sessions} phiên)
+              </span>
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-2 text-xs text-text-secondary border-t border-border-button pt-2">
+              <span data-testid="kpi-avg-rounds">
+                Lượt TB (≥1):{' '}
+                <strong className="text-text-primary">
+                  {kpi.interactive_sessions > 0
+                    ? kpi.avg_rounds.toFixed(2)
+                    : '—'}
+                </strong>
+              </span>
+              <span data-testid="kpi-unengaged-sessions">
+                0 lượt: {kpi.unengaged_sessions}
+              </span>
+            </div>
+          </div>
+
+          {/* KPI Card 3: CSAT Score & Star Distribution */}
           <div
             className="rounded-xl border border-border-button bg-bg-card p-4 shadow-sm flex flex-col justify-between"
             data-testid="kpi-card-csat"
           >
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-medium text-text-secondary uppercase tracking-wider">
                 Điểm CSAT Trung bình (1-5 ⭐)
               </span>
-              <Star className="size-5 text-amber-400 fill-amber-400" />
+              <Star className="size-5 text-amber-400 fill-amber-400 shrink-0" />
             </div>
-            <div className="mt-3 flex items-baseline gap-2">
+            <div className="mt-3 flex items-baseline gap-2 flex-wrap">
               <span className="text-3xl font-bold text-amber-400">
                 {kpi.csat_count > 0 ? kpi.avg_csat.toFixed(2) : '—'}
               </span>
@@ -719,7 +794,7 @@ export const SessionFeedbackAuditView: React.FC<
                 / 5.0 ({kpi.csat_count} lượt chấm CSAT)
               </span>
             </div>
-            <div className="mt-3 flex items-center gap-1.5 text-[11px] text-text-secondary border-t border-border-button pt-2">
+            <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px] text-text-secondary border-t border-border-button pt-2">
               {['5', '4', '3', '2', '1'].map((star) => (
                 <span
                   key={star}
@@ -748,7 +823,9 @@ export const SessionFeedbackAuditView: React.FC<
                   ? `${kpi.satisfaction_rate}%`
                   : '—'}
               </span>
-              <span className="text-xs text-text-secondary">tỷ lệ tích cực</span>
+              <span className="text-xs text-text-secondary">
+                tỷ lệ tích cực
+              </span>
             </div>
             <div className="mt-3 flex items-center justify-between text-xs border-t border-border-button pt-2">
               <span className="inline-flex items-center gap-1 text-emerald-400 font-medium">
@@ -942,7 +1019,9 @@ export const SessionFeedbackAuditView: React.FC<
                 <SelectContent>
                   <SelectItem value="all">Tất cả kênh</SelectItem>
                   <SelectItem value="web">Web nội bộ</SelectItem>
-                  <SelectItem value="widget">Widget / Chia sẻ công khai</SelectItem>
+                  <SelectItem value="widget">
+                    Widget / Chia sẻ công khai
+                  </SelectItem>
                   <SelectItem value="telegram">Telegram Bot</SelectItem>
                 </SelectContent>
               </Select>
@@ -1006,6 +1085,33 @@ export const SessionFeedbackAuditView: React.FC<
                     setCurrentDate({ from: range.from, to: range.to })
                   }
                 />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-text-secondary whitespace-nowrap">
+                  Tương tác:
+                </span>
+                <Select
+                  value={interactionFilter}
+                  onValueChange={handleInteractionFilterChange}
+                >
+                  <SelectTrigger
+                    className="w-60"
+                    data-testid="filter-interaction-status"
+                  >
+                    <SelectValue placeholder="Trạng thái tương tác" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="interactive">
+                      Chỉ có tương tác (≥ 1 lượt)
+                    </SelectItem>
+                    <SelectItem value="all">
+                      Tất cả hội thoại (bao gồm 0 lượt)
+                    </SelectItem>
+                    <SelectItem value="none">
+                      Không tương tác (0 lượt)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -1152,7 +1258,11 @@ export const SessionFeedbackAuditView: React.FC<
 
       <AgentLogDetailModal
         isOpen={openModal}
-        message={(modalData?.messages || modalData?.message || []) as IAgentLogMessage[]}
+        message={
+          (modalData?.messages ||
+            modalData?.message ||
+            []) as IAgentLogMessage[]
+        }
         reference={modalData?.reference as unknown as IReferenceObject}
         feedbackConfig={modalData?.feedback_config}
         title={

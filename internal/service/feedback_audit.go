@@ -34,24 +34,25 @@ import (
 // FeedbackAuditFilterRequest represents the unified query parameters for listing and filtering
 // conversation sessions with feedback across both Chat Assistants and Agents.
 type FeedbackAuditFilterRequest struct {
-	SourceType     string // "all" | "chat" | "agent"
-	AppID          string // dialog_id (chat) or canvas_id (agent)
-	SessionID      string
-	UserID         string
-	HasFeedback    *bool   // true: only sessions with >= 1 rated message; false: only unrated sessions
-	ThumbUp        *bool   // true: positive feedback; false: negative feedback
-	MinCSAT        *int    // 1..5
-	MaxCSAT        *int    // 1..5
-	Channel        string  // "web" | "widget" | "telegram" | "api"
-	CriterionKey   string  // specific criterion key to filter
-	CriterionValue string  // "true" | "false" | "1".."5" | "failed"
-	Keywords       string  // search in session id, session name, message content, or feedback comment
-	FromDate       string
-	ToDate         string
-	OrderBy        string // "update_time" | "create_time" | "csat_score" | "rated_count" | "round"
-	Desc           bool
-	Page           int
-	PageSize       int
+	SourceType        string // "all" | "chat" | "agent"
+	AppID             string // dialog_id (chat) or canvas_id (agent)
+	SessionID         string
+	UserID            string
+	HasFeedback       *bool   // true: only sessions with >= 1 rated message; false: only unrated sessions
+	ThumbUp           *bool   // true: positive feedback; false: negative feedback
+	MinCSAT           *int    // 1..5
+	MaxCSAT           *int    // 1..5
+	Channel           string  // "web" | "widget" | "telegram" | "api"
+	CriterionKey      string  // specific criterion key to filter
+	CriterionValue    string  // "true" | "false" | "1".."5" | "failed"
+	InteractionStatus string  // "all" | "interactive" (round >= 1) | "none" (round == 0)
+	Keywords          string  // search in session id, session name, message content, or feedback comment
+	FromDate          string
+	ToDate            string
+	OrderBy           string // "update_time" | "create_time" | "csat_score" | "rated_count" | "round"
+	Desc              bool
+	Page              int
+	PageSize          int
 }
 
 // CriterionBreakdownStat holds aggregated statistics for a single feedback criterion.
@@ -67,18 +68,23 @@ type CriterionBreakdownStat struct {
 
 // FeedbackKPISummary holds the unified KPI metrics for the filtered sessions.
 type FeedbackKPISummary struct {
-	TotalSessions      int                               `json:"total_sessions"`
-	RatedSessions      int                               `json:"rated_sessions"`
-	RatedMessages      int                               `json:"rated_messages"`
-	PositiveCount      int                               `json:"positive_count"`
-	NegativeCount      int                               `json:"negative_count"`
-	SatisfactionRate   float64                           `json:"satisfaction_rate"`
-	AvgCSAT            float64                           `json:"avg_csat"`
-	CSATCount          int                               `json:"csat_count"`
-	CSATDistribution   map[string]int                    `json:"csat_distribution"`
-	ByChannel          map[string]int                    `json:"by_channel"`
-	BySourceType       map[string]int                    `json:"by_source_type"`
-	CriteriaBreakdown  map[string]CriterionBreakdownStat `json:"criteria_breakdown"`
+	TotalSessions       int                               `json:"total_sessions"`
+	InteractiveSessions int                               `json:"interactive_sessions"`
+	UnengagedSessions   int                               `json:"unengaged_sessions"`
+	InteractionRate     float64                           `json:"interaction_rate"`
+	AvgRounds           float64                           `json:"avg_rounds"`
+	TotalRounds         int                               `json:"total_rounds"`
+	RatedSessions       int                               `json:"rated_sessions"`
+	RatedMessages       int                               `json:"rated_messages"`
+	PositiveCount       int                               `json:"positive_count"`
+	NegativeCount       int                               `json:"negative_count"`
+	SatisfactionRate    float64                           `json:"satisfaction_rate"`
+	AvgCSAT             float64                           `json:"avg_csat"`
+	CSATCount           int                               `json:"csat_count"`
+	CSATDistribution    map[string]int                    `json:"csat_distribution"`
+	ByChannel           map[string]int                    `json:"by_channel"`
+	BySourceType        map[string]int                    `json:"by_source_type"`
+	CriteriaBreakdown   map[string]CriterionBreakdownStat `json:"criteria_breakdown"`
 }
 
 // SessionFeedbackSummary holds the aggregated feedback status of a single session.
@@ -332,16 +338,24 @@ func (s *FeedbackAuditService) ListFeedbackSessions(
 		}
 	}
 
-	// 4. Apply unified feedback & content filters and compute KPI summary simultaneously
+	// 4. Apply base filters (excluding interaction_status) so KPI denominator retains
+	// opened sessions with 0 user turns, then apply interaction_status for table pagination.
 	criterionLabels := collectCriterionLabels(chatApps, agentApps)
-	filtered := make([]UnifiedFeedbackSessionItem, 0, len(candidateItems))
+	baseFiltered := make([]UnifiedFeedbackSessionItem, 0, len(candidateItems))
 	for _, item := range candidateItems {
-		if matchesFeedbackAuditFilter(item, req) {
-			filtered = append(filtered, item)
+		if matchesBaseFeedbackAuditFilter(item, req) {
+			baseFiltered = append(baseFiltered, item)
 		}
 	}
 
-	kpi := computeFeedbackKPISummary(filtered, criterionLabels)
+	kpi := computeFeedbackKPISummary(baseFiltered, criterionLabels)
+
+	filtered := make([]UnifiedFeedbackSessionItem, 0, len(baseFiltered))
+	for _, item := range baseFiltered {
+		if matchesInteractionFilter(item, req.InteractionStatus) {
+			filtered = append(filtered, item)
+		}
+	}
 
 	// 5. Sort filtered items
 	sortUnifiedSessions(filtered, req.OrderBy, req.Desc)
@@ -675,7 +689,22 @@ func summarizeSessionMessages(
 	return summary, roundCount
 }
 
+func matchesInteractionFilter(item UnifiedFeedbackSessionItem, interactionStatus string) bool {
+	switch strings.ToLower(strings.TrimSpace(interactionStatus)) {
+	case "interactive", "engaged":
+		return item.Round >= 1
+	case "none", "unengaged", "empty":
+		return item.Round == 0
+	default:
+		return true
+	}
+}
+
 func matchesFeedbackAuditFilter(item UnifiedFeedbackSessionItem, req FeedbackAuditFilterRequest) bool {
+	return matchesBaseFeedbackAuditFilter(item, req) && matchesInteractionFilter(item, req.InteractionStatus)
+}
+
+func matchesBaseFeedbackAuditFilter(item UnifiedFeedbackSessionItem, req FeedbackAuditFilterRequest) bool {
 	fb := item.FeedbackSummary
 
 	if req.HasFeedback != nil {
@@ -815,11 +844,18 @@ func computeFeedbackKPISummary(
 	}
 
 	var csatSum float64
+	var interactiveRoundsSum int
 	criteriaScoreSum := make(map[string]float64)
 	criteriaScoreCount := make(map[string]int)
 
 	for _, item := range items {
 		kpi.BySourceType[item.SourceType]++
+		if item.Round >= 1 {
+			kpi.InteractiveSessions++
+			interactiveRoundsSum += item.Round
+		} else {
+			kpi.UnengagedSessions++
+		}
 		if item.FeedbackSummary.HasFeedback {
 			kpi.RatedSessions++
 		}
@@ -901,6 +937,14 @@ func computeFeedbackKPISummary(
 			}
 			kpi.ByChannel[ch]++
 		}
+	}
+
+	kpi.TotalRounds = interactiveRoundsSum
+	if kpi.TotalSessions > 0 {
+		kpi.InteractionRate = math.Round((float64(kpi.InteractiveSessions)*1000)/float64(kpi.TotalSessions)) / 10
+	}
+	if kpi.InteractiveSessions > 0 {
+		kpi.AvgRounds = math.Round((float64(interactiveRoundsSum)/float64(kpi.InteractiveSessions))*100) / 100
 	}
 
 	totalVotes := kpi.PositiveCount + kpi.NegativeCount

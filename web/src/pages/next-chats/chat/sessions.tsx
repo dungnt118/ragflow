@@ -18,6 +18,7 @@ import {
   useGetChatSearchParams,
   useRemoveSessions,
 } from '@/hooks/use-chat-request';
+import { cn } from '@/lib/utils';
 import {
   LucideCopyX,
   LucideListChecks,

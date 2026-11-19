@@ -38,8 +38,8 @@ func setupChatChannelTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	// Migrate chat_channel and dialog (entity.Chat) tables
-	if err = db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}); err != nil {
+	// Migrate chat_channel, dialog (entity.Chat), and user_canvas (entity.UserCanvas) tables
+	if err = db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.UserCanvas{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -237,5 +237,53 @@ func TestChatChannelDAO_ListByTenantID(t *testing.T) {
 	// Verify Left Join mapping
 	if list[0].DialogName == nil || *list[0].DialogName != "Dialog Assistant A" {
 		t.Fatalf("expected dialog name %q, got %v (left join failed)", "Dialog Assistant A", list[0].DialogName)
+	}
+}
+
+func TestChatChannelDAO_ListByIDsJoinsUserCanvasTitle(t *testing.T) {
+	db := setupChatChannelTestDB(t)
+	pushDB(t, db)
+	dao := NewChatChannel()
+
+	agentTitle := "Agent QLTN"
+	uc := &entity.UserCanvas{
+		ID:             "agent-1",
+		UserID:         "tenant-1",
+		Title:          &agentTitle,
+		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap{},
+	}
+	if err := db.Create(uc).Error; err != nil {
+		t.Fatalf("failed to create test user canvas: %v", err)
+	}
+
+	cc := &entity.ChatChannel{
+		ID:       "chan-agent-1",
+		TenantID: "tenant-1",
+		Name:     "Thần Nông FAQ-Bot",
+		Channel:  "telegram",
+		Config:   entity.JSONMap{"bot_token": "tg-token"},
+		AgentID:  &uc.ID,
+		Status:   1,
+	}
+	if err := db.Create(cc).Error; err != nil {
+		t.Fatalf("failed to create chat channel: %v", err)
+	}
+
+	list, err := dao.ListByIDs(t.Context(), db, []string{"chan-agent-1"})
+	if err != nil {
+		t.Fatalf("ListByIDs failed: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(list))
+	}
+	if list[0].AgentID == nil || *list[0].AgentID != "agent-1" {
+		t.Fatalf("expected agent_id %q, got %v", "agent-1", list[0].AgentID)
+	}
+	if list[0].AgentName == nil || *list[0].AgentName != "Agent QLTN" {
+		t.Fatalf("expected agent_name %q, got %v", "Agent QLTN", list[0].AgentName)
+	}
+	if list[0].ChatID != nil || list[0].DialogName != nil {
+		t.Fatalf("expected nil chat_id and dialog_name when bound to agent, got chat_id=%v dialog_name=%v", list[0].ChatID, list[0].DialogName)
 	}
 }

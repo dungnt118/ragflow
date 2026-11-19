@@ -1567,7 +1567,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       dataSourceOptionArticles: '文章',
       dataSourceOptionTickets: '工单',
       dataSourceOptionNone: '无',
-      dataSourceOptionApiKeyHeader: 'API Key（请求头）',
+      dataSourceOptionXApiKey: 'X-API-KEY（请求头）',
+      dataSourceOptionApiKeyHeader: 'API Key（自定义请求头）',
       dataSourceOptionBearerToken: 'Bearer 令牌',
       dataSourceOptionBasicAuth: 'Basic 认证',
       dataSourceOptionPage: '页码',
@@ -2245,6 +2246,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       uploadLimit: '文件大小不能超过 10M，文件总数不超过 128 个',
       destinationFolder: '目标文件夹',
       pleaseUploadAtLeastOneFile: '请上传至少一个文件',
+      largeDownloadWarningTitle: '大文件下载提示',
+      largeDownloadWarningContent:
+        '下载总大小（{{size}}）超过 15MB，压缩和下载可能需要较长时间，是否继续？',
     },
     flow: {
       exportCurrentPage: '导出当页',

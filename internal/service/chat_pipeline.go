@@ -229,6 +229,21 @@ func (s *ChatPipelineService) AsyncChat(
 ) (<-chan AsyncChatResult, error) {
 
 	common.Info("AsyncChat started", zap.String("chat_id", chat.ID))
+	if chat != nil {
+		sessionID, _ := kwargs["session_id"].(string)
+		chatName := ""
+		if chat.Name != nil {
+			chatName = *chat.Name
+		}
+		ctx = common.WithModelUsageMeta(ctx, common.ModelUsageMeta{
+			TenantID:  chat.TenantID,
+			UserID:    userID,
+			AppID:     chat.ID,
+			AppName:   chatName,
+			AppType:   "chat",
+			SessionID: sessionID,
+		})
+	}
 
 	// === Phase 1: Entry Validation ===
 	// Guard: messages must be non-empty and the last role must be "user".
@@ -628,7 +643,9 @@ func (s *ChatPipelineService) AsyncChat(
 
 		// refine_multiturn — condense multi-turn conversation into a single
 		// refined question via LLM. When disabled, simply keep the last question.
-		if refine, _ := chat.PromptConfig["refine_multiturn"].(bool); refine && len(questions) > 1 && chatModel != nil {
+		refineCfg, _ := chat.PromptConfig["refine_multiturn"].(bool)
+		refineKwarg, _ := kwargs["refine_multiturn"].(bool)
+		if (refineCfg || refineKwarg) && len(questions) > 1 && chatModel != nil {
 			if refined, err := FullQuestion(ctx, chatModel, messages, ""); err == nil && refined != "" {
 				questions = []string{refined} // replace with refined question
 				common.Debug("refine_multiturn applied",

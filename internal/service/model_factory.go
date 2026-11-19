@@ -41,6 +41,8 @@ type modelTarget struct {
 	ProviderName  string
 	InstanceID    string
 	InstanceName  string
+	TenantID      string
+	UserID        string
 	Driver        modelModule.ModelDriver
 	APIConfig     *modelModule.APIConfig
 	ModelInfo     *modelModule.Model
@@ -207,6 +209,8 @@ func modelInfoFromTarget(target *modelTarget) *modelModule.ModelInfo {
 		ProviderName:  target.ProviderName,
 		InstanceID:    target.InstanceID,
 		InstanceName:  target.InstanceName,
+		TenantID:      target.TenantID,
+		UserID:        target.UserID,
 		ModelTypes:    modelTypes,
 		ContextLength: target.ContextLength,
 		MaxOutput:     target.MaxOutput,
@@ -452,7 +456,16 @@ func (f *ModelFactory) resolveConfigAuthorized(ctx context.Context, access Model
 		return nil, fmt.Errorf("%w: model type is required", errModelConfigUnavailable)
 	}
 
-	return f.resolveModel(ctx, access, modelType, modelRef)
+	target, err := f.resolveModel(ctx, access, modelType, modelRef)
+	if err == nil && target != nil {
+		if target.TenantID == "" {
+			target.TenantID = access.TenantID
+		}
+		if target.UserID == "" {
+			target.UserID = access.UserID
+		}
+	}
+	return target, err
 }
 
 func normalizeModelAccess(access ModelAccess) ModelAccess {

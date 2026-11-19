@@ -142,6 +142,12 @@ func (d *DatasetService) getDownloadStatus(ctx context.Context, datasetID string
 			status.FailCount += runningErrors[task.ID]
 		case dao.SyncStatusDone:
 			status.FailCount += task.ErrorCount
+		case dao.SyncStatusFail:
+			if task.ErrorClass == "" && task.ErrorCount > 0 {
+				status.FailCount += task.ErrorCount
+			} else {
+				status.FailCount++
+			}
 		}
 	}
 	return status, nil

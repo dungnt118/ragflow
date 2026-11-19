@@ -59,6 +59,7 @@ export enum Routes {
   Team = '/team',
   Plan = '/plan',
   Model = '/model',
+  TokenUsage = '/token-usage',
   Prompt = '/prompt',
   CompilationTemplatesEditNext = '/compilation-templates/edit-next',
   DataSource = '/data-source',
@@ -80,6 +81,7 @@ export enum Routes {
   KnowledgeGraph = '/knowledge-graph',
   Compilation = '/compilation',
   AgentLogPage = '/agent-log-page',
+  ChatLogPage = '/chat-log-page',
   AgentShare = '/agent/share',
   ChatShare = `${Chats}/share`,
   ChatWidget = `${Chats}/widget`,
@@ -296,6 +298,10 @@ const routeConfigOptions = [
             Component: () => import('@/pages/user-setting/setting-model'),
           },
           {
+            path: `${Routes.UserSetting}${Routes.TokenUsage}`,
+            Component: () => import('@/pages/user-setting/setting-token-usage'),
+          },
+          {
             path: `${Routes.UserSetting}/team`,
             Component: () => import('@/pages/user-setting/setting-team'),
           },
@@ -366,6 +372,10 @@ const routeConfigOptions = [
   },
   {
     path: `${Routes.AgentLogPage}/:id`,
+    Component: () => import('@/pages/agents/agent-log-page'),
+  },
+  {
+    path: `${Routes.ChatLogPage}/:id`,
     Component: () => import('@/pages/agents/agent-log-page'),
   },
   {

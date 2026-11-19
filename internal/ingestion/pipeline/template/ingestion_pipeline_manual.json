@@ -2,11 +2,13 @@
     "id": 35,
     "title": {
         "en": "Manual",
+        "vi": "Sổ tay Kỹ thuật (Manual)",
         "de": "Handbuch",
         "zh": "手册"
     },
     "description": {
-        "en": "This template segments parsed files by manual structure. Best for technical documents with clearly defined sections and operational guidance, such as product manuals, user guides, and installation instructions.",
+        "en": "This template segments parsed files by manual structure while preserving step-by-step operational procedures, tables, and diagrams. Use cases: Product user manuals, Standard Operating Procedures (SOPs), hardware installation guides, maintenance handbooks, and IT runbooks.",
+        "vi": "Phân đoạn theo cấu trúc phân cấp của sổ tay kỹ thuật, giữ trọn vẹn quy trình thao tác từng bước kèm bảng biểu và hình minh họa. Tình huống sử dụng: Tài liệu hướng dẫn sử dụng sản phẩm, quy trình vận hành chuẩn (SOP), cẩm nang lắp đặt - bảo trì thiết bị, tài liệu hướng dẫn quản trị hệ thống IT.",
         "de": "Diese Vorlage segmentiert die geparste Datei anhand der Struktur eines Handbuchs. Sie eignet sich für Dokumente mit klar definierten Abschnitten und Handlungsanweisungen, wie Produkthandbücher, Benutzerhandbücher, Installationsanleitungen und technische Dokumentationen.",
         "zh": "此模板将解析后的文件按手册结构进行切片，适用于具有清晰章节层级和操作说明的文档类型，如产品手册、用户指南、安装说明和技术文档。"
     },

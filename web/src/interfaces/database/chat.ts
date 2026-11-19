@@ -1,5 +1,7 @@
 import { MessageType, WebSearchProvider } from '@/constants/chat';
 import { IAttachment } from '@/hooks/use-send-message';
+import { IFeedbackConfig, IFeedbackDetail } from '@/interfaces/request/chat';
+export type { IFeedbackConfig, IFeedbackDetail };
 
 export interface IDocumentDownloadInfo {
   doc_id: string;
@@ -56,6 +58,7 @@ export interface PromptConfig {
   tavily_api_key?: string;
   youcom_api_key?: string;
   web_search_provider?: WebSearchProvider;
+  feedback_config?: IFeedbackConfig;
 }
 
 export interface Parameter {
@@ -151,6 +154,10 @@ export interface Message {
   downloads?: IDocumentDownloadInfo[];
   usage?: ITurnUsage;
   elapsed_ms?: number;
+  thumbup?: boolean;
+  feedback?: string;
+  feedback_detail?: IFeedbackDetail;
+  session_id?: string;
 }
 
 export interface IReferenceChunk {
@@ -248,6 +255,7 @@ export interface IExternalChatInfo {
   has_tavily_key?: boolean;
   has_web_search_provider?: boolean;
   llm_id?: string;
+  feedback_config?: IFeedbackConfig;
 }
 
 export interface IMessage extends Message {

@@ -2,10 +2,12 @@
     "id": 13,
     "title": {
         "en": "Photo text translator",
+        "vi": "Nhận diện & Dịch thuật Văn bản qua Hình ảnh",
         "de": "Bild-Dolmetscher",
         "zh": "图片文字快译"},
     "description": {
         "en": "Photo text translator lets you snap any photo containing text—menus, signs, or documents—and instantly recognize and translate it into your language of choice using advanced AI-powered translation technology.",
+        "vi": "Trích xuất văn bản từ hình ảnh chụp thực tế (hóa đơn, nhãn mác hàng hóa, thực đơn, biển báo, tài liệu in) và dịch thuật tức thì sang ngôn ngữ mong muốn bằng AI đa phương thức. Tình huống sử dụng: Dịch tài liệu scan, nhãn sản phẩm nhập khẩu, chứng từ thương mại quốc tế.",
         "de": "Bild-Dolmetscher ermöglicht es Ihnen, jedes Foto mit Text – Menüs, Schilder oder Dokumente – zu fotografieren und es sofort in Ihre gewünschte Sprache zu erkennen und zu übersetzen, unter Verwendung fortschrittlicher KI-gestützter Übersetzungstechnologie.",
         "zh": "图片文字快译允许您拍摄任何包含文本的照片——菜单、标志或文档——立即识别并转换成您选择的语言。"},
     "canvas_type": "Consumer App",

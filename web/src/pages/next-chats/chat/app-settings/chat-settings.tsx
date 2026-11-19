@@ -30,6 +30,7 @@ import { useParams } from 'react-router';
 import { z } from 'zod';
 import ChatBasicSetting from './chat-basic-settings';
 import { ChatPromptEngine } from './chat-prompt-engine';
+import { FeedbackConfigFields } from '@/components/feedback-config-fields';
 import { resolveAgenticRagSubmitValue } from './agentic-rag-submit';
 import { SavingButton } from './saving-button';
 import { useChatSettingSchema } from './use-chat-setting-schema';
@@ -205,8 +206,10 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       <section
         data-testid="chat-detail-settings"
         className={cn(
-          'transition-[width] ease-out duration-300 flex-shrink-0 flex flex-col overflow-hidden',
-          settingVisible ? 'w-[440px]' : 'w-0',
+          'transition-all ease-out duration-300 flex-shrink-0 flex flex-col overflow-hidden',
+          settingVisible
+            ? 'fixed inset-0 z-50 bg-bg-base md:static md:z-auto md:w-[440px]'
+            : 'w-0 hidden md:flex',
         )}
       >
         {settingVisible && (
@@ -248,6 +251,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
                       agenticSettingOpen={agenticSettingOpen}
                       onAgenticSettingOpenChange={onAgenticSettingOpenChange}
                     ></ChatPromptEngine>
+                    <FeedbackConfigFields baseName="prompt_config.feedback_config" />
                   </section>
                 </ScrollArea>
 

@@ -18,7 +18,7 @@ import { FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { TFunction } from 'i18next';
-import { BookOpen, Globe, Mail, Rss, Search } from 'lucide-react';
+import { BookOpen, Globe, Mail, Radar, Rss, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
@@ -36,6 +36,7 @@ import { jiraConstant } from './jira-constant';
 import { S3Constant } from './s3-constant';
 import { seafileConstant } from './seafile-constant';
 import { sitemapConstant } from './sitemap-constant';
+import { webCrawlerConstant } from './web-crawler-constant';
 
 export enum DataSourceKey {
   CONFLUENCE = 'confluence',
@@ -71,6 +72,7 @@ export enum DataSourceKey {
   REST_API = 'rest_api',
   RSS = 'rss',
   SITEMAP = 'sitemap',
+  WEB_CRAWLER = 'web_crawler',
   ONEDRIVE = 'onedrive',
   OUTLOOK = 'outlook',
   SALESFORCE = 'salesforce',
@@ -167,6 +169,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.SITEMAP]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.WEB_CRAWLER]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.MOODLE]: {
     syncDeletedFiles: true,
   },
@@ -200,6 +205,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.BIGQUERY]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.REST_API]: {
+    syncDeletedFiles: true,
+  },
 };
 
 const isDataSourceFeatureVisible = (
@@ -224,6 +232,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Sitemap',
       description: t(`setting.${DataSourceKey.SITEMAP}Description`),
       icon: <Globe className="text-text-primary" size={22} />,
+    },
+    [DataSourceKey.WEB_CRAWLER]: {
+      name: 'Web Crawler (Spider)',
+      description: t('setting.webCrawlerDescription'),
+      icon: <Radar className="text-text-primary" size={22} />,
     },
     [DataSourceKey.GOOGLE_CLOUD_STORAGE]: {
       name: 'Google Cloud Storage',
@@ -496,6 +509,7 @@ export const getCommonExtraFields = (t: TFunction, source?: DataSourceKey) => [
     type: FormFieldType.Checkbox,
     required: false,
     defaultValue: false,
+    tooltip: t('setting.syncDeletedFilesTip'),
     shouldRender: () => isDataSourceFeatureVisible(source, 'syncDeletedFiles'),
   },
 ];
@@ -814,6 +828,7 @@ const generateDataSourceFormFields = (t: TFunction) => ({
     },
   ],
   [DataSourceKey.SITEMAP]: sitemapConstant(t),
+  [DataSourceKey.WEB_CRAWLER]: webCrawlerConstant(t),
   [DataSourceKey.GOOGLE_CLOUD_STORAGE]: [
     {
       label: t('setting.dataSourceFieldGcsAccessKeyId'),
@@ -1424,6 +1439,78 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       required: false,
       defaultValue: true,
     },
+    {
+      label: t('setting.dataSourceIncludeDocsAndCodeFiles'),
+      name: 'config.include_code_files',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: false,
+      customValidate: (val: boolean, formValues: any) => {
+        const pr = !!formValues?.config?.include_pull_requests;
+        const issues = !!formValues?.config?.include_issues;
+        if (!pr && !issues && !val) {
+          return t('setting.dataSourceGithubAtLeastOneSourceRequired');
+        }
+        return true;
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldBranch'),
+      name: 'config.branch',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'main',
+      tooltip: t('setting.dataSourceFieldBranchTip'),
+      shouldRender: (formValues: any) =>
+        !!formValues?.config?.include_code_files,
+    },
+    {
+      label: t('setting.dataSourceFieldSyncScope'),
+      name: 'config.sync_scope',
+      type: FormFieldType.Select,
+      required: false,
+      defaultValue: 'repository',
+      tooltip: t('setting.dataSourceGithubSyncScopeTip'),
+      options: [
+        {
+          label: t('setting.dataSourceOptionEntireRepository'),
+          value: 'repository',
+        },
+        {
+          label: t('setting.dataSourceOptionSpecificFolder'),
+          value: 'directory',
+        },
+      ],
+      shouldRender: (formValues: any) =>
+        !!formValues?.config?.include_code_files,
+    },
+    {
+      label: t('setting.dataSourceFieldFolderPath'),
+      name: 'config.folder_path',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'docs',
+      tooltip: t('setting.dataSourceFieldFolderPathTip'),
+      shouldRender: (formValues: any) =>
+        !!formValues?.config?.include_code_files &&
+        formValues?.config?.sync_scope === 'directory',
+      customValidate: (val: string, formValues: any) => {
+        const enabled = !!formValues?.config?.include_code_files;
+        const scope = formValues?.config?.sync_scope;
+        if (enabled && scope === 'directory') {
+          const trimmed = (val || '').trim().replace(/^\/+|\/+$/g, '');
+          if (!trimmed) {
+            return t('setting.dataSourceValidationFieldRequired', {
+              label: t('setting.dataSourceFieldFolderPath'),
+            });
+          }
+          if (trimmed.split('/').some((seg) => seg === '.' || seg === '..')) {
+            return "Folder path must not contain '.' or '..'";
+          }
+        }
+        return true;
+      },
+    },
   ],
   [DataSourceKey.IMAP]: [
     {
@@ -1951,6 +2038,14 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       placeholder: 'https://api.example.com/v1/resources',
     },
     {
+      label: t('setting.dataSourceFieldDetailUrl'),
+      name: 'config.detail_url',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'https://api.example.com/v1/posts/{id}',
+      tooltip: t('setting.restApiDetailUrlTip'),
+    },
+    {
       label: t('setting.dataSourceFieldHttpMethod'),
       name: 'config.method',
       type: FormFieldType.Select,
@@ -1986,12 +2081,24 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       tooltip: t('setting.restApiIdFieldTip'),
     },
     {
+      label: t('setting.dataSourceFieldTitleField'),
+      name: 'config.title_field',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'title',
+      tooltip: t('setting.restApiTitleFieldTip'),
+    },
+    {
       label: t('setting.dataSourceFieldAuthType'),
       name: 'config.auth_type',
       type: FormFieldType.Select,
       required: true,
       options: [
         { label: t('setting.dataSourceOptionNone'), value: 'none' },
+        {
+          label: t('setting.dataSourceOptionXApiKey') || 'X-API-KEY (Header)',
+          value: 'x-api-key',
+        },
         {
           label: t('setting.dataSourceOptionApiKeyHeader'),
           value: 'api_key_header',
@@ -2025,9 +2132,14 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       type: FormFieldType.Password,
       required: false,
       shouldRender: (values: any) =>
+        values?.config?.auth_type === 'x-api-key' ||
         values?.config?.auth_type === 'api_key_header',
       customValidate: (val: string, values: any) => {
-        if (values?.config?.auth_type === 'api_key_header' && !val) {
+        if (
+          (values?.config?.auth_type === 'x-api-key' ||
+            values?.config?.auth_type === 'api_key_header') &&
+          !val
+        ) {
           return t('setting.restApiValidationApiKeyRequired');
         }
         return true;
@@ -2084,6 +2196,29 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       tooltip: t('setting.restApiContentFieldsTip'),
     },
     {
+      label: t('setting.dataSourceFieldContentFormat'),
+      name: 'config.content_format',
+      type: FormFieldType.Select,
+      required: false,
+      defaultValue: 'text',
+      options: [
+        { label: t('setting.dataSourceOptionContentFormatText'), value: 'text' },
+        {
+          label: t('setting.dataSourceOptionContentFormatMarkdown'),
+          value: 'markdown',
+        },
+      ],
+      tooltip: t('setting.restApiContentFormatTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldContentTemplate'),
+      name: 'config.content_template',
+      type: FormFieldType.Textarea,
+      required: false,
+      placeholder: '# {title}\n\n{body}',
+      tooltip: t('setting.restApiContentTemplateTip'),
+    },
+    {
       label: t('setting.dataSourceFieldMetadataFields'),
       name: 'config.metadata_fields',
       type: FormFieldType.Text,
@@ -2110,6 +2245,30 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       type: FormFieldType.Number,
       required: false,
       defaultValue: 1,
+      shouldRender: (values: any) => values?.config?.pagination_type === 'page',
+    },
+    {
+      label: t('setting.dataSourceFieldPageParam'),
+      name: 'config.pagination_config.page_param',
+      type: FormFieldType.Text,
+      required: false,
+      defaultValue: 'page',
+      shouldRender: (values: any) => values?.config?.pagination_type === 'page',
+    },
+    {
+      label: t('setting.dataSourceFieldPageSizeParam'),
+      name: 'config.pagination_config.page_size_param',
+      type: FormFieldType.Text,
+      required: false,
+      defaultValue: 'page_size',
+      shouldRender: (values: any) => values?.config?.pagination_type === 'page',
+    },
+    {
+      label: t('setting.dataSourceFieldPageSize'),
+      name: 'config.pagination_config.page_size',
+      type: FormFieldType.Number,
+      required: false,
+      defaultValue: 100,
       shouldRender: (values: any) => values?.config?.pagination_type === 'page',
     },
     {
@@ -2165,6 +2324,15 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       required: false,
       placeholder: `{"X-Custom-Header": "value"}`,
       tooltip: t('setting.restApiHeadersTip'),
+      shouldRender: (values: any) => !!values?.config?.show_advanced,
+    },
+    {
+      label: t('setting.dataSourceFieldDetailResponsePath'),
+      name: 'config.detail_response_path',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '$.data',
+      tooltip: t('setting.restApiDetailResponsePathTip'),
       shouldRender: (values: any) => !!values?.config?.show_advanced,
     },
     {
@@ -2239,11 +2407,32 @@ export const DataSourceFormDefaultValues = {
   [DataSourceKey.SITEMAP]: {
     name: '',
     source: DataSourceKey.SITEMAP,
+    refresh_freq: 360,
     config: {
       sitemap_url: '',
       url_filter: '',
       follow_pdf_links: false,
       restrict_pdf_to_domain: true,
+      user_agent: '',
+      batch_size: 10,
+    },
+  },
+  [DataSourceKey.WEB_CRAWLER]: {
+    name: '',
+    source: DataSourceKey.WEB_CRAWLER,
+    refresh_freq: 360,
+    config: {
+      start_url: '',
+      crawl_mode: 'auto',
+      extract_strategy: 'article_clean',
+      max_depth: 2,
+      max_pages: 300,
+      same_domain_only: true,
+      url_filter: '',
+      exclude_url_filter: '',
+      follow_pdf_links: false,
+      restrict_pdf_to_domain: true,
+      crawl_delay_ms: 100,
       user_agent: '',
       batch_size: 10,
     },
@@ -2541,6 +2730,10 @@ export const DataSourceFormDefaultValues = {
       repository_name: '',
       include_pull_requests: true,
       include_issues: true,
+      include_code_files: false,
+      branch: 'main',
+      sync_scope: 'repository',
+      folder_path: '',
       credentials: {
         github_access_token: '',
       },
@@ -2757,6 +2950,8 @@ export const DataSourceFormDefaultValues = {
     source: DataSourceKey.REST_API,
     config: {
       url: '',
+      detail_url: '',
+      detail_response_path: '',
       method: 'GET',
       query_params: '',
       headers: '',
@@ -2764,7 +2959,10 @@ export const DataSourceFormDefaultValues = {
       auth_config: {},
       items_path: '',
       id_field: '',
+      title_field: '',
+      content_format: 'text',
       content_fields: '',
+      content_template: '',
       metadata_fields: '',
       pagination_type: 'none',
       pagination_config: {},

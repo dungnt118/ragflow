@@ -107,6 +107,9 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 		if identity, code, err := h.userService.ResolveAPIToken(ctx, auth); err == nil && code == common.CodeSuccess {
 			setAuthIdentity(c, identity)
 			c.Set("auth_via_api_token", true)
+			if identity.APIToken != nil && identity.APIToken.DialogID != nil && *identity.APIToken.DialogID != "" {
+				c.Set("agent_id", *identity.APIToken.DialogID)
+			}
 			c.Next()
 			return
 		}

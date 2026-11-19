@@ -2,11 +2,13 @@
     "id": 48,
     "title": {
         "en": "Q&A",
+        "vi": "Hỏi & Đáp (Q&A)",
         "de": "Frage & Antwort",
         "zh": "问答"
     },
     "description": {
-        "en": "This template segments parsed files by Q&A pairs. Best for documents structured as questions and answers, such as FAQ pages, interview transcripts, and knowledge bases organized in a question-answer format.",
+        "en": "This template segments parsed files by Question-and-Answer pairs so each question stays intact with its exact answer. Use cases: Customer support FAQs, call-center scripts, onboarding Q&A handbooks, interview transcripts, and troubleshooting guides.",
+        "vi": "Tự động nhận diện và tách tài liệu theo từng cặp Câu hỏi - Câu trả lời (Q&A) độc lập, giúp truy xuất chính xác câu trả lời mà không bị đứt gãy ngữ cảnh. Tình huống sử dụng: Bộ câu hỏi thường gặp (FAQ) chăm sóc khách hàng, kịch bản tư vấn telesales, cẩm nang hỏi đáp nhân sự mới, biên bản phỏng vấn (.docx, .xlsx, .csv, .pdf).",
         "de": "Diese Vorlage segmentiert die geparste Datei anhand von Frage-Antwort-Paaren. Sie eignet sich für Dokumente die als Fragen und Antworten strukturiert sind, wie FAQ-Seiten, Interview-Transkripte und in einem Frage-Antwort-Format organisierte Wissensdatenbanken.",
         "zh": "此模板将解析后的文件按问答对进行切片，适用于以问答形式组织的文档类型，如常见问题页面、采访记录以及以问答格式组织的知识库。"
     },

@@ -22,6 +22,7 @@ import {
   useFetchDocumentThumbnailsByIds,
   useGetDocumentUrl,
 } from '@/hooks/use-document-request';
+import { useLoadingPause } from '@/hooks/use-loading-pause';
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import {
   currentReg,
@@ -57,6 +58,7 @@ import rehypeRaw from 'rehype-raw';
 import { RehypeSanitizeAssistantMarkdown } from '@/constants/markdown-rehype-plugins';
 import { visitParents } from 'unist-util-visit-parents';
 import styles from './floating-chat-widget-markdown.module.less';
+import { LoadingDots } from './loading-dots';
 import { useIsDarkTheme } from './theme-provider';
 import { Button } from './ui/button';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card';
@@ -83,14 +85,17 @@ const FloatingChatWidgetMarkdown = ({
   const isDarkTheme = useIsDarkTheme();
 
   const contentWithCursor = useMemo(() => {
-    const text = content === '' ? t('chat.searching') : content;
+    const text = content === '' ? '' : content;
     const nextText = replaceTextByOldReg(text);
+    const thinkSummary = loading
+      ? `${t('chat.thinking', 'Đang suy nghĩ')}...`
+      : t('chat.thought', 'Quá trình suy luận');
     return pipe(
-      replaceThinkToSection,
+      (value: string) => replaceThinkToSection(value, thinkSummary),
       replaceRetrievingToSection,
       preprocessLaTeX,
     )(nextText);
-  }, [content, t]);
+  }, [content, loading, t]);
 
   useEffect(() => {
     const docAggs = reference?.doc_aggs;
@@ -344,6 +349,18 @@ const FloatingChatWidgetMarkdown = ({
   );
 
   const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
+  const showLoadingDots = useLoadingPause(loading, content);
+
+  if (loading && content === '') {
+    return (
+      <div className={styles['floating-chat-widget']} dir={dir}>
+        <LoadingDots
+          className="text-text-secondary py-0.5"
+          label={t('chat.typingIndicator', 'Đang soạn câu trả lời...')}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className={styles['floating-chat-widget']} dir={dir}>
@@ -396,6 +413,9 @@ const FloatingChatWidgetMarkdown = ({
       >
         {contentWithCursor}
       </Markdown>
+      {showLoadingDots && (
+        <LoadingDots className="ml-1 inline-block text-text-secondary" />
+      )}
     </div>
   );
 };

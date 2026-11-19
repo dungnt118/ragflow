@@ -31,6 +31,7 @@ export interface ISwitchForm {
 }
 
 import { AgentCategory } from '@/constants/agent';
+import { IFeedbackConfig } from '@/interfaces/request/chat';
 import { Edge, Node } from '@xyflow/react';
 import { IReference, Message } from './chat';
 import { ICompilationTemplateGroup } from './compilation-template';
@@ -49,6 +50,7 @@ export interface DSL {
   globals: Record<string, any>;
   variables: Record<string, GlobalVariableType>;
   retrieval: IReference[];
+  feedback_config?: IFeedbackConfig;
 }
 
 export interface IOperator {
@@ -127,12 +129,16 @@ export interface IFlowTemplate {
   description: {
     en: string;
     zh: string;
-    de: string;
+    de?: string;
+    vi?: string;
+    [key: string]: string | undefined;
   };
   title: {
     en: string;
     zh: string;
-    de: string;
+    de?: string;
+    vi?: string;
+    [key: string]: string | undefined;
   };
 }
 
@@ -333,6 +339,8 @@ export interface IBuiltinPipeline {
   id: string;
   title: string;
   description?: string;
+  titles?: Record<string, string>;
+  descriptions?: Record<string, string>;
   filename?: string;
 }
 
@@ -353,4 +361,33 @@ export interface IWebhookTrace {
   events: any[];
   next_since_ts: number;
   finished: boolean;
+}
+
+export interface IAINodePlanItem {
+  id: string;
+  component_name: string;
+  name: string;
+  role: string;
+  upstream_ids: string[];
+  downstream_ids: string[];
+}
+
+export interface IGenerateAgentByAIRequest {
+  prompt: string;
+  title?: string;
+  canvas_category?: string;
+  llm_id?: string;
+  dataset_ids?: string[];
+  auto_create?: boolean;
+}
+
+export interface IGenerateAgentByAIResponse {
+  title: string;
+  description: string;
+  canvas_category: string;
+  explanation: string;
+  node_plan: IAINodePlanItem[];
+  dsl: DSL;
+  used_fallback: boolean;
+  agent?: IFlow;
 }

@@ -139,9 +139,9 @@ export default function Dataset() {
   return (
     <Card
       as="article"
-      className="mb-5 mr-5 min-w-[880px] bg-transparent shadow-none"
+      className="mb-2 sm:mb-5 mr-0 sm:mr-5 min-w-0 md:min-w-[880px] bg-transparent shadow-none overflow-x-auto"
     >
-      <CardHeader as="header" className="p-5 space-y-0">
+      <CardHeader as="header" className="p-3 sm:p-5 space-y-0">
         <ListFilterBar
           onSearchChange={handleInputChange}
           searchString={searchString}

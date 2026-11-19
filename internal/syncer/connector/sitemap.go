@@ -68,6 +68,8 @@ type SitemapConnector struct {
 	urlFilter           *regexp.Regexp
 	followPDFLinks      bool
 	restrictPDFToDomain bool
+	followPageLinks     bool
+	maxPageDepth        int
 
 	fetch sitemapFetchFunc
 }
@@ -89,6 +91,14 @@ func NewSitemapConnector(config map[string]any) (*SitemapConnector, error) {
 		urlFilter = compiled
 	}
 
+	maxPageDepth := configInt(config["max_page_depth"], 2)
+	if maxPageDepth < 1 {
+		maxPageDepth = 1
+	}
+	if maxPageDepth > maxSitemapDepth {
+		maxPageDepth = maxSitemapDepth
+	}
+
 	connector := &SitemapConnector{
 		sitemapURL:          sitemapURL,
 		batchSize:           configInt(config["batch_size"], defaultSitemapBatchSize),
@@ -96,6 +106,8 @@ func NewSitemapConnector(config map[string]any) (*SitemapConnector, error) {
 		urlFilter:           urlFilter,
 		followPDFLinks:      configBoolDefault(config["follow_pdf_links"], false),
 		restrictPDFToDomain: configBoolDefault(config["restrict_pdf_to_domain"], true),
+		followPageLinks:     configBoolDefault(config["follow_page_links"], false),
+		maxPageDepth:        maxPageDepth,
 	}
 	connector.fetch = connector.fetchRemote
 	return connector, nil
@@ -180,9 +192,9 @@ func (c *SitemapConnector) OpenSync(ctx context.Context, request SyncRequest) (S
 
 // OpenPrune opens one complete sitemap prune snapshot session.
 //
-// When PDF link discovery is enabled the HTML pages are fetched so that the
-// discovered PDFs are part of the retained set; otherwise they would be pruned
-// as stale right after being indexed.
+// When PDF link discovery or HTML page link discovery is enabled the HTML pages
+// are fetched so that the discovered links are part of the retained set;
+// otherwise they would be pruned as stale right after being indexed.
 func (c *SitemapConnector) OpenPrune(ctx context.Context, request PruneRequest) (PruneSession, error) {
 	entries, err := c.listEntries(ctx)
 	if err != nil {
@@ -191,34 +203,51 @@ func (c *SitemapConnector) OpenPrune(ctx context.Context, request PruneRequest) 
 
 	documents := make([]SlimDocument, 0, len(entries))
 	seen := make(map[string]struct{}, len(entries))
+	queue := make([]sitemapEntry, 0, len(entries))
 	for _, entry := range entries {
 		seen[entry.loc] = struct{}{}
+		queue = append(queue, entry)
 		if !c.urlMatches(entry.loc) {
 			continue
 		}
 		documents = append(documents, SlimDocument{SourceID: sitemapSourceID(entry.loc)})
 	}
 
-	if c.followPDFLinks {
-		for _, entry := range entries {
+	if c.followPDFLinks || c.followPageLinks {
+		for idx := 0; idx < len(queue); idx++ {
+			entry := queue[idx]
 			if !c.urlMatches(entry.loc) {
 				continue
 			}
 			body, contentType, err := c.fetch(ctx, entry.loc)
 			if err != nil {
-				common.Warn("sitemap prune: failed to fetch page for PDF discovery",
+				common.Warn("sitemap prune: failed to fetch page for link discovery",
 					zap.String("url", entry.loc), zap.Error(err))
 				continue
 			}
 			if isPDFResponse(contentType, body) {
 				continue
 			}
-			for _, pdfURL := range c.discoverPDFLinks(body, entry.loc) {
-				if _, exists := seen[pdfURL]; exists {
-					continue
+			if c.followPageLinks && entry.depth < c.maxPageDepth {
+				for _, pageURL := range c.discoverPageLinks(body, entry.loc) {
+					if _, exists := seen[pageURL]; exists {
+						continue
+					}
+					seen[pageURL] = struct{}{}
+					queue = append(queue, sitemapEntry{loc: pageURL, depth: entry.depth + 1, parentURL: entry.loc})
+					if c.urlMatches(pageURL) {
+						documents = append(documents, SlimDocument{SourceID: sitemapSourceID(pageURL)})
+					}
 				}
-				seen[pdfURL] = struct{}{}
-				documents = append(documents, SlimDocument{SourceID: sitemapSourceID(pdfURL)})
+			}
+			if c.followPDFLinks {
+				for _, pdfURL := range c.discoverPDFLinks(body, entry.loc) {
+					if _, exists := seen[pdfURL]; exists {
+						continue
+					}
+					seen[pdfURL] = struct{}{}
+					documents = append(documents, SlimDocument{SourceID: sitemapSourceID(pdfURL)})
+				}
 			}
 		}
 	}
@@ -312,15 +341,15 @@ func (c *SitemapConnector) urlMatches(rawURL string) bool {
 
 // buildDocument downloads one URL and converts it into a source document.
 // It returns nil when the page must be skipped (fetch error or empty content).
-func (c *SitemapConnector) buildDocument(ctx context.Context, rawURL string, lastmod time.Time, parentURL string) (*SourceDocument, []string) {
+func (c *SitemapConnector) buildDocument(ctx context.Context, rawURL string, lastmod time.Time, parentURL string) (*SourceDocument, []string, []string) {
 	if err := validateSitemapURL(rawURL); err != nil {
 		common.Warn("sitemap: skipping invalid page URL", zap.String("url", rawURL), zap.Error(err))
-		return nil, nil
+		return nil, nil, nil
 	}
 	body, contentType, err := c.fetch(ctx, rawURL)
 	if err != nil {
 		common.Warn("sitemap: failed to fetch page", zap.String("url", rawURL), zap.Error(err))
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	updatedAt := lastmod
@@ -332,11 +361,12 @@ func (c *SitemapConnector) buildDocument(ctx context.Context, rawURL string, las
 		blob      []byte
 		extension string
 		pdfLinks  []string
+		pageLinks []string
 	)
 	if isPDFResponse(contentType, body) {
 		if len(body) == 0 {
 			common.Debug("sitemap: empty PDF, skipping", zap.String("url", rawURL))
-			return nil, nil
+			return nil, nil, nil
 		}
 		blob = body
 		extension = ".pdf"
@@ -344,14 +374,17 @@ func (c *SitemapConnector) buildDocument(ctx context.Context, rawURL string, las
 		if c.followPDFLinks {
 			pdfLinks = c.discoverPDFLinks(body, rawURL)
 		}
+		if c.followPageLinks {
+			pageLinks = c.discoverPageLinks(body, rawURL)
+		}
 		text, err := sitemapHTMLToMarkdown(body)
 		if err != nil {
 			common.Warn("sitemap: failed to parse page", zap.String("url", rawURL), zap.Error(err))
-			return nil, pdfLinks
+			return nil, pdfLinks, pageLinks
 		}
 		if strings.TrimSpace(text) == "" {
 			common.Debug("sitemap: empty content, skipping", zap.String("url", rawURL))
-			return nil, pdfLinks
+			return nil, pdfLinks, pageLinks
 		}
 		blob = []byte(text)
 		extension = ".md"
@@ -373,7 +406,33 @@ func (c *SitemapConnector) buildDocument(ctx context.Context, rawURL string, las
 		SizeBytes:          int64(len(blob)),
 		Metadata:           metadata,
 		Fingerprint:        contentFingerprint(blob),
-	}, pdfLinks
+	}, pdfLinks, pageLinks
+}
+
+// discoverPageLinks returns same-domain HTML/SSR links discovered inside an HTML page.
+func (c *SitemapConnector) discoverPageLinks(body []byte, pageURL string) []string {
+	sitemapHost := hostOf(c.sitemapURL)
+	seen := make(map[string]struct{})
+	var links []string
+	addLink := func(candidate string) {
+		normalized := normalizeCrawlURL(candidate)
+		if normalized == "" || hostOf(normalized) != sitemapHost {
+			return
+		}
+		if _, exists := seen[normalized]; exists {
+			return
+		}
+		seen[normalized] = struct{}{}
+		links = append(links, normalized)
+	}
+	for _, link := range extractHTMLLinks(body, pageURL) {
+		addLink(link)
+	}
+	hydrationLinks, _ := extractHydrationLinks(body, originOf(pageURL))
+	for _, link := range hydrationLinks {
+		addLink(link)
+	}
+	return links
 }
 
 // discoverPDFLinks returns the absolute PDF links found in an HTML page that
@@ -486,7 +545,20 @@ func (s *sitemapSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 		if !s.connector.urlMatches(entry.loc) {
 			continue
 		}
-		doc, pdfLinks := s.connector.buildDocument(ctx, entry.loc, entry.lastmod, "")
+		doc, pdfLinks, pageLinks := s.connector.buildDocument(ctx, entry.loc, entry.lastmod, entry.parentURL)
+		if s.connector.followPageLinks && entry.depth < s.connector.maxPageDepth {
+			for _, pageURL := range pageLinks {
+				if _, exists := s.seen[pageURL]; exists {
+					continue
+				}
+				s.seen[pageURL] = struct{}{}
+				s.pending = append(s.pending, sitemapEntry{
+					loc:       pageURL,
+					depth:     entry.depth + 1,
+					parentURL: entry.loc,
+				})
+			}
+		}
 		for _, pdfURL := range pdfLinks {
 			if _, exists := s.seen[pdfURL]; exists {
 				continue
@@ -506,7 +578,7 @@ func (s *sitemapSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 			}
 			link := s.pendingPDFs[s.pdfIndex]
 			s.pdfIndex++
-			doc, _ := s.connector.buildDocument(ctx, link.url, time.Time{}, link.parentURL)
+			doc, _, _ := s.connector.buildDocument(ctx, link.url, time.Time{}, link.parentURL)
 			if doc != nil {
 				documents = append(documents, *doc)
 			}
@@ -590,10 +662,12 @@ func (s *sitemapPruneSession) Close() error {
 	return nil
 }
 
-// sitemapEntry is one <url> element of a urlset.
+// sitemapEntry is one <url> element of a urlset or a discovered child link.
 type sitemapEntry struct {
-	loc     string
-	lastmod time.Time
+	loc       string
+	lastmod   time.Time
+	depth     int
+	parentURL string
 }
 
 // sitemapDocument is a parsed sitemap or sitemap index.

@@ -17,7 +17,9 @@
 package common
 
 import (
+	"context"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -30,6 +32,7 @@ type ModelUsage struct {
 	GroupName      string    `json:"group_name"`
 	AppID          string    `json:"app_id"`
 	AppName        string    `json:"app_name"`
+	AppType        string    `json:"app_type"`
 	SessionID      string    `json:"session_id"`
 	ProviderName   string    `json:"provider_name"`
 	InstanceID     string    `json:"instance_id"`
@@ -41,13 +44,97 @@ type ModelUsage struct {
 	ResponseTimeMS int64     `json:"response_time_ms"`
 	ErrorMessage   string    `json:"error_message"`
 
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
-	TotalTokens  int `json:"total_tokens"`
+	InputTokens  int  `json:"input_tokens"`
+	OutputTokens int  `json:"output_tokens"`
+	TotalTokens  int  `json:"total_tokens"`
+	IsEstimated  bool `json:"is_estimated"`
+	Recorded     bool `json:"-"`
 }
 
 func (m *ModelUsage) String() string {
 	return fmt.Sprintf("%#v", m)
+}
+
+// ModelUsageMeta carries caller context (tenant, app, session) down to model wrappers.
+type ModelUsageMeta struct {
+	TenantID  string
+	UserID    string
+	AppID     string
+	AppName   string
+	AppType   string // "chat", "agent", "ingestion", "retrieval", "system"
+	SessionID string
+}
+
+type modelUsageMetaKey struct{}
+
+// WithModelUsageMeta attaches ModelUsageMeta to ctx, merging with any existing meta.
+func WithModelUsageMeta(ctx context.Context, meta ModelUsageMeta) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if prev, ok := ctx.Value(modelUsageMetaKey{}).(ModelUsageMeta); ok {
+		if meta.TenantID == "" {
+			meta.TenantID = prev.TenantID
+		}
+		if meta.UserID == "" {
+			meta.UserID = prev.UserID
+		}
+		if meta.AppID == "" {
+			meta.AppID = prev.AppID
+		}
+		if meta.AppName == "" {
+			meta.AppName = prev.AppName
+		}
+		if meta.AppType == "" {
+			meta.AppType = prev.AppType
+		}
+		if meta.SessionID == "" {
+			meta.SessionID = prev.SessionID
+		}
+	}
+	return context.WithValue(ctx, modelUsageMetaKey{}, meta)
+}
+
+// ModelUsageMetaFromContext extracts ModelUsageMeta from ctx if present.
+func ModelUsageMetaFromContext(ctx context.Context) (ModelUsageMeta, bool) {
+	if ctx == nil {
+		return ModelUsageMeta{}, false
+	}
+	meta, ok := ctx.Value(modelUsageMetaKey{}).(ModelUsageMeta)
+	return meta, ok
+}
+
+// ModelUsageRecorder is a callback invoked whenever a model call completes.
+type ModelUsageRecorder func(usage *ModelUsage)
+
+var (
+	usageRecorderMu sync.RWMutex
+	usageRecorder   ModelUsageRecorder
+)
+
+// RegisterModelUsageRecorder registers the global sink for completed LLM calls.
+func RegisterModelUsageRecorder(recorder ModelUsageRecorder) {
+	usageRecorderMu.Lock()
+	usageRecorder = recorder
+	usageRecorderMu.Unlock()
+}
+
+// RecordModelUsage dispatches usage to the registered recorder at most once per ModelUsage instance.
+func RecordModelUsage(usage *ModelUsage) {
+	if usage == nil || usage.Recorded {
+		return
+	}
+	if usage.TotalTokens <= 0 && usage.InputTokens <= 0 && usage.OutputTokens <= 0 {
+		return
+	}
+	usage.Recorded = true
+	usageRecorderMu.RLock()
+	rec := usageRecorder
+	usageRecorderMu.RUnlock()
+	if rec != nil {
+		cp := *usage
+		rec(&cp)
+	}
 }
 
 type OperationLog struct {

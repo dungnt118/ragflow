@@ -19,7 +19,13 @@ import { useDeleteCompilationTemplateGroup } from '@/hooks/use-compilation-templ
 import { Routes } from '@/routes';
 import { pick } from 'lodash';
 import { BuiltinPipelineSection } from './builtin-pipeline-section';
-import { Clipboard, ClipboardPlus, FileInput, Plus } from 'lucide-react';
+import {
+  Clipboard,
+  ClipboardPlus,
+  FileInput,
+  Plus,
+  Sparkles,
+} from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router';
@@ -30,6 +36,7 @@ import {
   shouldShowBuiltinForRaw,
 } from './builtin-pipeline-list';
 import { CompilationTemplateCard } from './compilation-template-card';
+import { CreateAgentByAIDialog } from './create-agent-by-ai-dialog';
 import { CreateAgentDialog } from './create-agent-dialog';
 import { useCreateAgentOrPipeline } from './hooks/use-create-agent';
 import { useSelectFilters } from './hooks/use-select-filters';
@@ -91,6 +98,10 @@ export default function Agents() {
     loading,
     handleCreateAgentOrPipeline,
   } = useCreateAgentOrPipeline();
+
+  const [aiDialogVisible, setAiDialogVisible] = useState(false);
+  const showAiCreatingModal = useCallback(() => setAiDialogVisible(true), []);
+  const hideAiCreatingModal = useCallback(() => setAiDialogVisible(false), []);
 
   const {
     handleImportJson,
@@ -178,6 +189,15 @@ export default function Agents() {
             onChange={handleFilterSubmit}
             value={filterValue}
           >
+            <Button
+              variant="secondary"
+              data-testid="create-agent-by-ai-btn"
+              onClick={showAiCreatingModal}
+              className="gap-1.5"
+            >
+              <Sparkles className="size-4 text-primary" />
+              <span>{t('flow.createByAI')}</span>
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger data-testid="create-agent" asChild>
                 <Button>
@@ -185,6 +205,14 @@ export default function Agents() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent data-testid="agent-create-menu">
+                <DropdownMenuItem
+                  data-testid="agent-create-by-ai-menu-item"
+                  justifyBetween={false}
+                  onClick={showAiCreatingModal}
+                >
+                  <Sparkles className="text-primary" />
+                  {t('flow.createByAI')}
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   justifyBetween={false}
                   onClick={showCreatingModal}
@@ -274,6 +302,17 @@ export default function Agents() {
               // onClick={() => showCreatingModal()}
             >
               <ul className="flex flex-col gap-y-5 text-text-secondary text-sm pt-5">
+                <li data-testid="agents-empty-create-ai">
+                  <Button
+                    variant="static"
+                    size="auto"
+                    onClick={showAiCreatingModal}
+                  >
+                    <Sparkles className="size-[1em] text-primary" />
+                    {t('flow.createByAI')}
+                  </Button>
+                </li>
+
                 <li data-testid="agents-empty-create">
                   <Button
                     variant="static"
@@ -334,6 +373,12 @@ export default function Agents() {
           hideModal={hideFileUploadModal}
           onOk={onFileUploadOk}
         ></UploadAgentDialog>
+      )}
+      {aiDialogVisible && (
+        <CreateAgentByAIDialog
+          visible={aiDialogVisible}
+          hideModal={hideAiCreatingModal}
+        />
       )}
     </>
   );

@@ -59,7 +59,11 @@ func TestTelegramChatType(t *testing.T) {
 }
 
 func TestTelegramHandleUpdateMapsCaptionAndIgnoresBots(t *testing.T) {
-	ch := newTelegramChannel(telegramAccount{AccountID: "account-1", Token: "token"})
+	ch := newTelegramChannel(telegramAccount{
+		AccountID:         "account-1",
+		Token:             "token",
+		AllowGroupPrivacy: true,
+	})
 	messages := make(chan core.IncomingMessage, 1)
 	ch.SetMessageHandler(func(_ context.Context, msg core.IncomingMessage) error {
 		messages <- msg
@@ -203,6 +207,7 @@ func TestTelegramSendIgnoresInvalidChatID(t *testing.T) {
 
 func TestTelegramStartAndStopPollsUpdates(t *testing.T) {
 	updateReturned := false
+	typingActions := make(chan map[string]any, 4)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/deleteWebhook"):
@@ -214,6 +219,15 @@ func TestTelegramStartAndStopPollsUpdates(t *testing.T) {
 				return
 			}
 			_, _ = w.Write([]byte(`{"ok":true,"result":[]}`))
+		case strings.HasSuffix(r.URL.Path, "/sendChatAction"):
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
+				select {
+				case typingActions <- payload:
+				default:
+				}
+			}
+			_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
 		case strings.HasSuffix(r.URL.Path, "/sendMessage"):
 			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":1}}`))
 		default:
@@ -248,7 +262,375 @@ func TestTelegramStartAndStopPollsUpdates(t *testing.T) {
 		t.Fatal("timed out waiting for polled message")
 	}
 
+	select {
+	case action := <-typingActions:
+		if action["chat_id"] != float64(5) || action["action"] != "typing" {
+			t.Fatalf("unexpected sendChatAction payload: %+v", action)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for sendChatAction")
+	}
+
 	if err := ch.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop() error = %v", err)
+	}
+}
+
+func TestTelegramHandleUpdateRefreshesTypingActionWhileProcessing(t *testing.T) {
+	typingCalls := make(chan map[string]any, 10)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/sendChatAction") {
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
+				typingCalls <- payload
+			}
+			_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+	}))
+	defer server.Close()
+
+	ch := newTelegramChannel(telegramAccount{
+		AccountID:      "account-1",
+		Token:          "token",
+		APIBaseURL:     server.URL,
+		TypingInterval: 15 * time.Millisecond,
+	})
+	ch.SetMessageHandler(func(_ context.Context, _ core.IncomingMessage) error {
+		time.Sleep(40 * time.Millisecond)
+		return nil
+	})
+
+	ch.handleUpdate(context.Background(), telegramUpdate{
+		UpdateID: 1,
+		Message: &telegramMessage{
+			MessageID: 10,
+			From:      &telegramUser{ID: 7},
+			Chat:      telegramChat{ID: 99, Type: "private"},
+			Text:      "hi",
+		},
+	})
+
+	if len(typingCalls) < 2 {
+		t.Fatalf("expected at least 2 sendChatAction calls during processing, got %d", len(typingCalls))
+	}
+	first := <-typingCalls
+	if first["chat_id"] != float64(99) || first["action"] != "typing" {
+		t.Fatalf("unexpected typing payload: %+v", first)
+	}
+}
+
+func TestTelegramGroupPrivacyDefaultBlocksUnmentionedAndStripsMention(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/getMe"):
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"id":777,"is_bot":true,"username":"riversidegarden_bot"}}`))
+		case strings.HasSuffix(r.URL.Path, "/sendChatAction"):
+			_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+		default:
+			_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+		}
+	}))
+	defer server.Close()
+
+	ch, err := newTelegramChannelFromConfig("account-1", map[string]any{
+		"token":        "token",
+		"api_base_url": server.URL,
+	})
+	if err != nil {
+		t.Fatalf("newTelegramChannelFromConfig() error = %v", err)
+	}
+	if ch.account.AllowGroupPrivacy {
+		t.Fatal("expected AllowGroupPrivacy to default to false")
+	}
+
+	messages := make(chan core.IncomingMessage, 4)
+	ch.SetMessageHandler(func(_ context.Context, msg core.IncomingMessage) error {
+		messages <- msg
+		return nil
+	})
+
+	// 1. Unmentioned message in group -> blocked
+	ch.handleUpdate(context.Background(), telegramUpdate{
+		UpdateID: 1,
+		Message: &telegramMessage{
+			MessageID: 10,
+			From:      &telegramUser{ID: 7},
+			Chat:      telegramChat{ID: -100, Type: "group"},
+			Text:      "Mọi người ơi hôm nay họp lúc mấy giờ?",
+		},
+	})
+
+	// 2. Prefix mention of a different bot (@riversidegarden_bot_v2) -> blocked
+	ch.handleUpdate(context.Background(), telegramUpdate{
+		UpdateID: 2,
+		Message: &telegramMessage{
+			MessageID: 11,
+			From:      &telegramUser{ID: 7},
+			Chat:      telegramChat{ID: -100, Type: "supergroup"},
+			Text:      "@riversidegarden_bot_v2 Quy trình kế toán là gì?",
+		},
+	})
+
+	select {
+	case msg := <-messages:
+		t.Fatalf("unmentioned group message should be blocked when allowGroupPrivacy=false, got: %+v", msg)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	// 3. Exact mention (@RiversideGarden_Bot, case-insensitive) in group -> allowed & stripped
+	ch.handleUpdate(context.Background(), telegramUpdate{
+		UpdateID: 3,
+		Message: &telegramMessage{
+			MessageID: 12,
+			From:      &telegramUser{ID: 7},
+			Chat:      telegramChat{ID: -100, Type: "supergroup"},
+			Text:      "@RiversideGarden_Bot Quy trình kế toán thu tiền phí thi công như thế nào?",
+		},
+	})
+
+	select {
+	case msg := <-messages:
+		if msg.Text != "Quy trình kế toán thu tiền phí thi công như thế nào?" {
+			t.Fatalf("expected stripped mention text, got %q", msg.Text)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for mentioned group message")
+	}
+
+	// 4. DM (private) message without mention -> always allowed
+	ch.handleUpdate(context.Background(), telegramUpdate{
+		UpdateID: 4,
+		Message: &telegramMessage{
+			MessageID: 13,
+			From:      &telegramUser{ID: 7},
+			Chat:      telegramChat{ID: 7, Type: "private"},
+			Text:      "Câu hỏi trực tiếp qua DM",
+		},
+	})
+
+	select {
+	case msg := <-messages:
+		if msg.Text != "Câu hỏi trực tiếp qua DM" || msg.ChatType != "p2p" {
+			t.Fatalf("unexpected DM message: %+v", msg)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for DM message")
+	}
+}
+
+func TestTelegramGroupPrivacyAllowedRespondsWithoutMention(t *testing.T) {
+	ch, err := newTelegramChannelFromConfig("account-1", map[string]any{
+		"token":             "token",
+		"allowGroupPrivacy": true,
+	})
+	if err != nil {
+		t.Fatalf("newTelegramChannelFromConfig() error = %v", err)
+	}
+	if !ch.account.AllowGroupPrivacy {
+		t.Fatal("expected AllowGroupPrivacy to be true")
+	}
+
+	messages := make(chan core.IncomingMessage, 1)
+	ch.SetMessageHandler(func(_ context.Context, msg core.IncomingMessage) error {
+		messages <- msg
+		return nil
+	})
+
+	ch.handleUpdate(context.Background(), telegramUpdate{
+		UpdateID: 1,
+		Message: &telegramMessage{
+			MessageID: 20,
+			From:      &telegramUser{ID: 7},
+			Chat:      telegramChat{ID: -200, Type: "group"},
+			Text:      "Tin nhắn trong group không cần tag bot",
+		},
+	})
+
+	select {
+	case msg := <-messages:
+		if msg.Text != "Tin nhắn trong group không cần tag bot" {
+			t.Fatalf("unexpected group message: %+v", msg)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for group message with allowGroupPrivacy=true")
+	}
+}
+
+func TestTelegramGroupReplyToBotAllowedWithoutMentionAndTracksReplyChain(t *testing.T) {
+	var nextBotMsgID int64 = 100
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/bottoken/getMe":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"ok": true,
+				"result": map[string]any{
+					"id":       999001,
+					"is_bot":   true,
+					"username": "riversidegarden_bot",
+				},
+			})
+		case "/bottoken/sendChatAction":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"ok":     true,
+				"result": true,
+			})
+		case "/bottoken/sendMessage":
+			nextBotMsgID++
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"ok": true,
+				"result": map[string]any{
+					"message_id": nextBotMsgID,
+				},
+			})
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	ch, err := newTelegramChannelFromConfig("account-1", map[string]any{
+		"token":        "token",
+		"api_base_url": server.URL,
+	})
+	if err != nil {
+		t.Fatalf("newTelegramChannelFromConfig() error = %v", err)
+	}
+
+	messages := make(chan core.IncomingMessage, 8)
+	ch.SetMessageHandler(func(ctx context.Context, msg core.IncomingMessage) error {
+		messages <- msg
+		return ch.Send(ctx, core.OutgoingMessage{
+			ChatID:           msg.ChatID,
+			Text:             "Bot answer for " + msg.MessageID,
+			ReplyToMessageID: msg.MessageID,
+		})
+	})
+
+	// Turn 1: User A starts a topic in group (#100) with @mention -> bot replies (#101)
+	ch.handleUpdate(context.Background(), telegramUpdate{
+		UpdateID: 1,
+		Message: &telegramMessage{
+			MessageID: 100,
+			From:      &telegramUser{ID: 11, Username: "nguyenvana", FirstName: "Nguyen", LastName: "Van A"},
+			Chat:      telegramChat{ID: -100555, Type: "supergroup", Title: "BQL Riverside"},
+			Text:      "@riversidegarden_bot Giá căn 2PN là bao nhiêu?",
+		},
+	})
+
+	turn1 := <-messages
+	if turn1.ThreadID != "100" || turn1.Text != "Giá căn 2PN là bao nhiêu?" {
+		t.Fatalf("unexpected turn 1: %+v", turn1)
+	}
+	if turn1.ChatTitle != "BQL Riverside" || turn1.SenderUsername != "nguyenvana" || turn1.SenderName != "Nguyen Van A" {
+		t.Fatalf("unexpected turn 1 metadata: %+v", turn1)
+	}
+
+	// Turn 2: User B replies directly to Bot's message (#101) WITHOUT @mention -> allowed & stays on ThreadID "100"
+	nextBotMsgID = 101 // bot's next reply will become #102
+	ch.handleUpdate(context.Background(), telegramUpdate{
+		UpdateID: 2,
+		Message: &telegramMessage{
+			MessageID: 105,
+			From:      &telegramUser{ID: 22, Username: "lethib", FirstName: "Le", LastName: "Thi B"},
+			Chat:      telegramChat{ID: -100555, Type: "supergroup", Title: "BQL Riverside"},
+			ReplyToMessage: &telegramMessage{
+				MessageID: 101,
+				From:      &telegramUser{ID: 999001, IsBot: true, Username: "riversidegarden_bot"},
+				Text:      "Giá căn 2PN là 3.5 tỷ.",
+			},
+			Text: "Giá đó đã gồm VAT chưa?",
+		},
+	})
+
+	select {
+	case turn2 := <-messages:
+		if turn2.ThreadID != "100" {
+			t.Fatalf("expected reply chain to stay on root ThreadID 100, got %q", turn2.ThreadID)
+		}
+		if !turn2.ReplyToIsBot || turn2.ReplyToMessageID != "101" || turn2.ReplyToText != "Giá căn 2PN là 3.5 tỷ." {
+			t.Fatalf("unexpected turn 2 reply metadata: %+v", turn2)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for direct reply to bot in group")
+	}
+
+	// Turn 3: User A replies to Bot's 2nd reply (#102) WITHOUT @mention -> still stays on ThreadID "100"
+	ch.handleUpdate(context.Background(), telegramUpdate{
+		UpdateID: 3,
+		Message: &telegramMessage{
+			MessageID: 108,
+			From:      &telegramUser{ID: 11, Username: "nguyenvana", FirstName: "Nguyen", LastName: "Van A"},
+			Chat:      telegramChat{ID: -100555, Type: "supergroup", Title: "BQL Riverside"},
+			ReplyToMessage: &telegramMessage{
+				MessageID: 102,
+				From:      &telegramUser{ID: 999001, IsBot: true, Username: "riversidegarden_bot"},
+				Text:      "Giá 3.5 tỷ đã bao gồm VAT.",
+			},
+			Text: "Còn tiến độ thanh toán thì sao?",
+		},
+	})
+
+	select {
+	case turn3 := <-messages:
+		if turn3.ThreadID != "100" {
+			t.Fatalf("expected 3rd turn in chain to keep root ThreadID 100, got %q", turn3.ThreadID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for 3rd turn in reply chain")
+	}
+
+	// Turn 4: User C replies to another human member (#50) WITHOUT @mention -> MUST BE BLOCKED
+	ch.handleUpdate(context.Background(), telegramUpdate{
+		UpdateID: 4,
+		Message: &telegramMessage{
+			MessageID: 109,
+			From:      &telegramUser{ID: 33, Username: "userc"},
+			Chat:      telegramChat{ID: -100555, Type: "supergroup", Title: "BQL Riverside"},
+			ReplyToMessage: &telegramMessage{
+				MessageID: 50,
+				From:      &telegramUser{ID: 44, IsBot: false, Username: "userd"},
+				Text:      "Tối nay họp tổ dân phố nhé",
+			},
+			Text: "Ok mình nhớ rồi",
+		},
+	})
+
+	select {
+	case unexpected := <-messages:
+		t.Fatalf("reply to human without @mention should be blocked, got: %+v", unexpected)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	// Turn 5: User C replies to human member (#50) WITH @mention -> allowed, starts thread "50" with ReplyToText
+	ch.handleUpdate(context.Background(), telegramUpdate{
+		UpdateID: 5,
+		Message: &telegramMessage{
+			MessageID: 110,
+			From:      &telegramUser{ID: 33, Username: "userc", FirstName: "User C"},
+			Chat:      telegramChat{ID: -100555, Type: "supergroup", Title: "BQL Riverside"},
+			ReplyToMessage: &telegramMessage{
+				MessageID: 50,
+				From:      &telegramUser{ID: 44, IsBot: false, Username: "userd", FirstName: "User D"},
+				Text:      "Khách ở căn A12 báo hỏng điều hòa trung tâm",
+			},
+			Text: "@riversidegarden_bot quy trình bảo hành thiết bị này thế nào?",
+		},
+	})
+
+	select {
+	case turn5 := <-messages:
+		if turn5.ThreadID != "50" {
+			t.Fatalf("expected thread root 50, got %q", turn5.ThreadID)
+		}
+		if turn5.Text != "quy trình bảo hành thiết bị này thế nào?" {
+			t.Fatalf("expected stripped mention, got %q", turn5.Text)
+		}
+		if turn5.ReplyToText != "Khách ở căn A12 báo hỏng điều hòa trung tâm" || turn5.ReplyToIsBot {
+			t.Fatalf("unexpected reply context on turn 5: %+v", turn5)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for mentioned reply to human message")
 	}
 }

@@ -2,11 +2,13 @@
     "id": 27,
     "title": {
         "en": "Interactive Agent",
+        "vi": "Tác tử Tương tác Có Con người Phê duyệt (Human-in-the-Loop)",
         "de": "Interaktiver Agent",
         "zh": "可交互的 Agent"
     },
     "description": {
         "en": "During the Agent’s execution, users can actively intervene and interact with the Agent to adjust or guide its output, ensuring the final result aligns with their intentions.",
+        "vi": "Minh họa cơ chế Human-in-the-Loop sử dụng khối UserFillUp: trong quá trình workflow đang chạy, Agent có thể tạm dừng để yêu cầu người dùng xác nhận hoặc nhập bổ sung thông tin trước khi thực hiện bước tiếp theo. Tình huống sử dụng: Quy trình phê duyệt đơn hàng, thu thập thông tin biểu mẫu đa bước, rà soát báo cáo.",
         "de": "Wahrend der Ausführung des Agenten können Benutzer aktiv eingreifen und mit dem Agenten interagieren, um dessen Ausgabe zu steuern, sodass das Endergebnis ihren Vorstellungen entspricht.",
         "zh": "在 Agent 的运行过程中，用户可以随时介入，与 Agent 进行交互，以调整或引导生成结果，使最终输出更符合预期。"
     },

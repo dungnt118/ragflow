@@ -53,6 +53,7 @@ export const useSendSharedMessage = () => {
   const { send, answer, done, stopOutputMessage } = useSendMessageWithSse();
   const {
     derivedMessages,
+    setDerivedMessages,
     removeLatestMessage,
     addNewestAnswer,
     addNewestQuestion,
@@ -163,6 +164,7 @@ export const useSendSharedMessage = () => {
     sendLoading: !done,
     loading: false,
     derivedMessages,
+    setDerivedMessages,
     hasError,
     stopOutputMessage,
     scrollRef,

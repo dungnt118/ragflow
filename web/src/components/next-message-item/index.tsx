@@ -21,6 +21,7 @@ import {
   IReferenceObject,
   UploadResponseDataType,
 } from '@/interfaces/database/chat';
+import { IFeedbackConfig, IFeedbackDetail } from '@/interfaces/request/chat';
 import classNames from 'classnames';
 import {
   PropsWithChildren,
@@ -41,7 +42,9 @@ import { citationMarkerReg } from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
 import { isEmpty } from 'lodash';
 import { Atom, ChevronDown, ChevronUp } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { DocumentDownloadButton } from '../document-download-button';
+import { FeedbackSummaryBadge } from '../feedback-summary-badge';
 import { LoadingDots } from '../loading-dots';
 import MarkdownContent from '../next-markdown-content';
 import { RAGFlowAvatar } from '../ragflow-avatar';
@@ -73,6 +76,19 @@ interface IProps
   showLoudspeaker?: boolean;
   showLog?: boolean;
   isShare?: boolean;
+  feedbackConfig?: IFeedbackConfig;
+  sessionId?: string;
+  isAgent?: boolean;
+  targetId?: string;
+  channel?: string;
+  onFeedbackSuccess?: (
+    messageId: string,
+    patch: {
+      thumbup?: boolean;
+      feedback?: string;
+      feedback_detail?: IFeedbackDetail;
+    },
+  ) => void;
 }
 
 function MessageItem({
@@ -96,12 +112,62 @@ function MessageItem({
   showLog,
   isShare,
   nickname,
+  index,
+  feedbackConfig,
+  sessionId,
+  isAgent,
+  targetId,
+  channel,
+  onFeedbackSuccess,
 }: IProps) {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
+  const isTyping = isAssistant && (loading || sendLoading);
   const [showThinking, setShowThinking] = useState(false);
   const { setLastSendLoadingFunc } = useContext(AgentChatContext);
+
+  const [localThumbup, setLocalThumbup] = useState<boolean | undefined>(
+    item.thumbup,
+  );
+  const [localFeedback, setLocalFeedback] = useState<string | undefined>(
+    item.feedback,
+  );
+  const [localDetail, setLocalDetail] = useState<IFeedbackDetail | undefined>(
+    item.feedback_detail,
+  );
+
+  useEffect(() => {
+    setLocalThumbup(item.thumbup);
+  }, [item.thumbup]);
+
+  useEffect(() => {
+    setLocalFeedback(item.feedback);
+  }, [item.feedback]);
+
+  useEffect(() => {
+    setLocalDetail(item.feedback_detail);
+  }, [item.feedback_detail]);
+
+  const handleFeedbackUpdated = useCallback(
+    (
+      msgId: string,
+      patch: {
+        thumbup?: boolean;
+        feedback?: string;
+        feedback_detail?: IFeedbackDetail;
+      },
+    ) => {
+      setLocalThumbup(patch.thumbup);
+      setLocalFeedback(patch.feedback);
+      if (patch.feedback_detail) {
+        setLocalDetail(patch.feedback_detail);
+      }
+      onFeedbackSuccess?.(msgId, patch);
+    },
+    [onFeedbackSuccess],
+  );
 
   useEffect(() => {
     if (typeof setLastSendLoadingFunc === 'function') {
@@ -136,7 +202,7 @@ function MessageItem({
   );
 
   const renderContent = useCallback(() => {
-    if (!messageContent && !(item.data || (sendLoading && !isShare))) {
+    if (!messageContent && !(item.data || isTyping)) {
       return null;
     }
 
@@ -154,8 +220,11 @@ function MessageItem({
       >
         {hasCustomChildren ? (
           children
-        ) : sendLoading && isEmpty(messageContent) ? (
-          <>{!isShare && <LoadingDots className="text-text-secondary" />}</>
+        ) : isTyping && isEmpty(messageContent) ? (
+          <LoadingDots
+            className="text-text-secondary py-1"
+            label={t('chat.typingIndicator', 'Đang soạn câu trả lời...')}
+          />
         ) : (
           <MarkdownContent
             loading={loading}
@@ -171,12 +240,13 @@ function MessageItem({
     children,
     clickDocumentButton,
     isAssistant,
-    isShare,
+    isTyping,
+    isUser,
     item.data,
     loading,
     messageContent,
     reference,
-    sendLoading,
+    t,
     theme,
   ]);
 
@@ -231,7 +301,7 @@ function MessageItem({
                         className={startedNodeList(item) ? 'animate-spin' : ''}
                       />
                     </div>
-                    Thinking
+                    {t('chat.thinking', 'Thinking')}
                     {showThinking ? <ChevronUp /> : <ChevronDown />}
                   </div>
                 </Button>
@@ -250,6 +320,17 @@ function MessageItem({
                         showLog={showLog}
                         attachment={item.attachment}
                         isShare={isShare}
+                        thumbup={localThumbup}
+                        feedback={localFeedback}
+                        feedbackDetail={localDetail}
+                        feedbackConfig={feedbackConfig}
+                        sessionId={
+                          sessionId || item.session_id || item.conversationId
+                        }
+                        isAgent={isAgent}
+                        targetId={targetId || conversationId}
+                        channel={channel}
+                        onFeedbackSuccess={handleFeedbackUpdated}
                       ></AssistantGroupButton>
                     )}
                     {!isShare && (
@@ -262,6 +343,17 @@ function MessageItem({
                         showLoudspeaker={showLoudspeaker}
                         showLog={showLog}
                         attachment={item.attachment}
+                        thumbup={localThumbup}
+                        feedback={localFeedback}
+                        feedbackDetail={localDetail}
+                        feedbackConfig={feedbackConfig}
+                        sessionId={
+                          sessionId || item.session_id || item.conversationId
+                        }
+                        isAgent={isAgent}
+                        targetId={targetId || conversationId}
+                        channel={channel}
+                        onFeedbackSuccess={handleFeedbackUpdated}
                       ></AssistantGroupButton>
                     )}
                   </>
@@ -296,6 +388,19 @@ function MessageItem({
               )}
 
             {renderContent()}
+
+            {isAssistant &&
+              (index !== 0 ||
+                localThumbup !== undefined ||
+                Boolean(localFeedback) ||
+                Boolean(localDetail)) && (
+                <FeedbackSummaryBadge
+                  thumbup={localThumbup}
+                  feedback={localFeedback}
+                  feedbackDetail={localDetail}
+                  feedbackConfig={feedbackConfig}
+                />
+              )}
 
             {isAssistant && (
               <ReferenceImageList

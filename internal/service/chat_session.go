@@ -583,14 +583,15 @@ func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, 
 		return nil, common.CodeServerError, err
 	}
 
-	thumbRaw, ok := req["thumbup"]
-	if !ok {
-		return nil, common.CodeDataError, errors.New("thumb-up must be a boolean")
+	var feedbackCfg *entity.FeedbackConfig
+	if dialog != nil {
+		feedbackCfg = entity.ExtractFeedbackConfig(dialog.PromptConfig)
 	}
-	thumbup, ok := thumbRaw.(bool)
-	if !ok {
-		return nil, common.CodeDataError, errors.New("thumb-up must be a boolean")
+	parsed, parseErr := ParseFeedbackRequest(req, feedbackCfg, "web", userID)
+	if parseErr != nil {
+		return nil, common.CodeDataError, parseErr
 	}
+	thumbup := parsed.ThumbUp
 
 	messages := parseMessages(session.Message)
 	if len(session.Message) > 0 && messages == nil {
@@ -615,14 +616,28 @@ func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, 
 		priorThumbBool, priorThumbIsBool := priorThumb.(bool)
 		if thumbup {
 			msg["thumbup"] = true
-			delete(msg, "feedback")
+			if parsed.Comment != "" {
+				msg["feedback"] = parsed.Comment
+			} else {
+				delete(msg, "feedback")
+			}
 			applyChunkFeedback = !priorThumbIsBool || !priorThumbBool
 		} else {
 			msg["thumbup"] = false
-			if feedback, exists := req["feedback"]; exists && isTruthy(feedback) {
+			if parsed.Comment != "" {
+				msg["feedback"] = parsed.Comment
+			} else if feedback, exists := req["feedback"]; exists && isTruthy(feedback) {
 				msg["feedback"] = feedback
 			}
 			applyChunkFeedback = !priorThumbIsBool || priorThumbBool
+		}
+		if parsed.Detail != nil {
+			if rawDetail, mErr := json.Marshal(parsed.Detail); mErr == nil {
+				var detailMap map[string]interface{}
+				if json.Unmarshal(rawDetail, &detailMap) == nil {
+					msg["feedback_detail"] = detailMap
+				}
+			}
 		}
 		messages[i] = msg
 		messageIndex = i
@@ -643,17 +658,25 @@ func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, 
 		return nil, common.CodeServerError, err
 	}
 	feedbackUpdate := map[string]interface{}{"thumb_up": thumbup}
-	if thumbup {
+	if thumbup && parsed.Comment == "" {
 		feedbackUpdate["feedback"] = nil
 	} else if messageIndex != -1 && messages[messageIndex]["feedback"] != nil {
 		feedbackUpdate["feedback"] = messages[messageIndex]["feedback"]
 	}
-	if err = s.chatSessionDAO.UpdateByID(ctx, dao.DB, session.ID, map[string]interface{}{"history_update": dao.ConversationHistoryUpdate{FeedbackMessageID: msgID, Feedback: feedbackUpdate}}); err != nil {
+	var shouldFireTrigger bool
+	if err = s.chatSessionDAO.UpdateByID(ctx, dao.DB, session.ID, map[string]interface{}{
+		"history_update": dao.ConversationHistoryUpdate{
+			FeedbackMessageID: msgID,
+			Feedback:          feedbackUpdate,
+			FeedbackDetail:    parsed.Detail,
+			ShouldFireTrigger: &shouldFireTrigger,
+		},
+	}); err != nil {
 		return nil, common.CodeServerError, err
 	}
 	session.Message = messageRaw
 
-	if feedbackReference != nil {
+	if feedbackReference != nil && dialog != nil {
 		applier := s.chunkFeedbackApplier
 		if applier == nil {
 			applier = s
@@ -673,6 +696,30 @@ func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, 
 				zap.Any("success_count", result["success_count"]),
 				zap.Any("fail_count", result["fail_count"]),
 			)
+		}
+	}
+
+	if messageIndex != -1 && feedbackCfg != nil && feedbackCfg.TriggerConfig != nil && feedbackCfg.TriggerConfig.Enabled && parsed.Detail != nil {
+		negCount := countNegativeMessages(messages)
+		if shouldFireTrigger && ShouldTriggerFeedback(feedbackCfg.TriggerConfig, *parsed.Detail, negCount) {
+			q, a := extractTurnQuestionAnswer(messages, messageIndex)
+			tenantID := ""
+			if dialog != nil {
+				tenantID = dialog.TenantID
+			}
+			DispatchFeedbackTriggerAsync(feedbackCfg.TriggerConfig, FeedbackTriggerEvent{
+				Event:       "feedback.triggered",
+				TenantID:    tenantID,
+				OwnerUserID: tenantID,
+				SourceType:  "chat",
+				SourceID:    chatID,
+				SessionID:   sessionID,
+				MessageID:   msgID,
+				Question:    q,
+				Answer:      a,
+				Reference:   feedbackReference,
+				Feedback:    *parsed.Detail,
+			}, nil)
 		}
 	}
 

@@ -2,11 +2,13 @@
     "id": 45,
     "title": {
         "en": "Audio",
+        "vi": "Âm thanh & Ghi âm (Audio)",
         "de": "Audio",
         "zh": "音频"
     },
     "description": {
-        "en": "This template transcribes audio files into text using a speech-to-text model. Supports .wav, .mp3, .aac, .flac, .ogg and other common audio formats.",
+        "en": "This template transcribes audio files into searchable text using a Speech-to-Text (ASR) model. Use cases: Call-center customer recordings, meeting voice memos, interview recordings, lectures, and podcasts (.wav, .mp3, .aac, .flac, .ogg).",
+        "vi": "Chuyển đổi tệp âm thanh và giọng nói thành văn bản có thể tra cứu bằng mô hình nhận diện tiếng nói (ASR / Speech-to-Text). Tình huống sử dụng: Ghi âm cuộc gọi tổng đài CSKH (Call Center), băng ghi âm cuộc họp, phỏng vấn, bài giảng đào tạo và podcast (.wav, .mp3, .aac, .flac, .ogg).",
         "de": "Diese Vorlage transkribiert Audiodateien mithilfe eines Speech-to-Text-Modells in Text. Unterstützt .wav, .mp3, .aac, .flac, .ogg und andere gängige Audioformate.",
         "zh": "此模板使用语音转文本模型将音频文件转录为文本。支持 .wav、.mp3、.aac、.flac、.ogg 及其他常见音频格式。"
     },

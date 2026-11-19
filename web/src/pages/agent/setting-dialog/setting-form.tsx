@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
 import { AvatarUpload } from '@/components/avatar-upload';
+import {
+  FeedbackConfigFields,
+  FeedbackConfigSchema,
+} from '@/components/feedback-config-fields';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Form, FormControl, FormItem, FormLabel } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
@@ -17,6 +21,7 @@ const formSchema = z.object({
   avatar: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
   permission: z.string(),
+  feedback_config: FeedbackConfigSchema,
 });
 
 export type SettingFormSchemaType = z.infer<typeof formSchema>;
@@ -45,6 +50,10 @@ export function SettingForm({ submit }: SettingFormProps) {
       description: data?.description,
       avatar: data.avatar,
       permission: data?.permission,
+      feedback_config: data?.dsl?.feedback_config ?? {
+        enabled: false,
+        mode: 'like_dislike',
+      },
     });
   }, [data, form]);
 
@@ -102,6 +111,8 @@ export function SettingForm({ submit }: SettingFormProps) {
             </RadioGroup>
           )}
         </RAGFlowFormItem>
+
+        <FeedbackConfigFields baseName="feedback_config" />
       </form>
     </Form>
   );

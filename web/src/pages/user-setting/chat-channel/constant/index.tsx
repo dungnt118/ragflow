@@ -574,6 +574,15 @@ export const ChatChannelFormFields: Record<ChatChannelKey, FormFieldConfig[]> =
         required: true,
         placeholder: 'From @BotFather',
       },
+      {
+        label: 'allowGroupPrivacy (Trả lời tự do trong Group)',
+        name: 'config.credential.allowGroupPrivacy',
+        type: FormFieldType.Switch,
+        required: false,
+        defaultValue: false,
+        tooltip:
+          'Mặc định: false (Tắt) — Trong nhóm (Group / Supergroup), Bot chỉ phản hồi khi được @mention chính xác tên bot (ví dụ: @ten_bot). Nếu bật (true), Bot sẽ phản hồi mọi tin nhắn trong nhóm mà không cần @mention.',
+      },
     ],
     [ChatChannelKey.TLON]: [
       {
@@ -767,6 +776,9 @@ ChatChannelFormDefaultValues[
 ].config.credential.connection_type = 'webhook';
 ChatChannelFormDefaultValues[ChatChannelKey.FEISHU].config.credential.domain =
   'feishu';
+ChatChannelFormDefaultValues[
+  ChatChannelKey.TELEGRAM
+].config.credential.allowGroupPrivacy = false;
 export const getChatChannelFields = (
   key?: ChatChannelKey,
 ): FormFieldConfig[] => {

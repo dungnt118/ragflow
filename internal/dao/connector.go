@@ -179,6 +179,12 @@ func (dao *ConnectorDAO) LinkDatasetConnectorsTx(ctx context.Context, tx *gorm.D
 			}
 			taskIDs = append(taskIDs, taskID)
 		}
+
+		if err := tx.WithContext(ctx).Model(&entity.Connector{}).
+			Where("id = ? AND status IN ?", connector.ID, []string{string(entity.TaskStatusUnstart), string(entity.TaskStatusDone), string(entity.TaskStatusCancel), string(entity.TaskStatusFail)}).
+			Update("status", string(entity.TaskStatusSchedule)).Error; err != nil {
+			return nil, err
+		}
 	}
 
 	for connectorID := range oldConnectorIDs {

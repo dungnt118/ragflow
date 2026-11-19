@@ -240,6 +240,7 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 		agentOpts.stateSerializer,
 		agentOpts.runTracker,
 	)
+	service.SetChatChannelAgentService(agentService)
 	agentHandler := handler.NewAgentHandler(ctx, agentService, fileService)
 
 	// Public chatbot/agentbot endpoints (api/v1/chatbots/...,

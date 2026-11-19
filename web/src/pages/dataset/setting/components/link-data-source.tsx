@@ -1,6 +1,12 @@
+import FileStatusBadge from '@/components/file-status-badge';
 import { IconFontFill } from '@/components/icon-font';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import {
+  RunningStatus,
+  RunningStatusMap,
+  RunningStatusOld,
+} from '@/constants/knowledge';
 import {
   Tooltip,
   TooltipContent,
@@ -12,7 +18,7 @@ import { delSourceModal } from '@/pages/user-setting/data-source/component/delet
 import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
 import { useDataSourceRebuild } from '@/pages/user-setting/data-source/hooks';
 import { IDataSourceBase } from '@/pages/user-setting/data-source/interface';
-import { Link, Settings, Unlink } from 'lucide-react';
+import { AlertTriangle, Link, Settings, Unlink } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import LinkDataSourceModal from './link-data-source-modal';
@@ -49,6 +55,7 @@ const DataSourceItem = (props: DataSourceItemProps) => {
     name,
     icon,
     source,
+    status,
     auto_parse,
     unbindFunc,
     handleAutoParse,
@@ -61,17 +68,40 @@ const DataSourceItem = (props: DataSourceItemProps) => {
     navigateToDataSourceDetail(id);
   };
 
+  const isFailed =
+    status === RunningStatus.FAIL ||
+    (status as string) === RunningStatusOld.FAIL;
+  const isStopped =
+    status === RunningStatus.CANCEL ||
+    (status as string) === RunningStatusOld.CANCEL;
+  const statusLabel = status
+    ? RunningStatusMap[status as keyof typeof RunningStatusMap]
+    : undefined;
+
   return (
     <div
       ref={itemRef}
-      className="flex items-center justify-between gap-1 px-2 h-10 rounded-md border group hover:bg-bg-card"
+      className={`flex items-center justify-between gap-1 px-2 h-10 rounded-md border group hover:bg-bg-card ${
+        isFailed
+          ? 'border-state-error/60 bg-state-error/5'
+          : isStopped
+            ? 'border-state-warning/60 bg-state-warning/5'
+            : ''
+      }`}
     >
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-2 min-w-0">
         <div className="w-6 h-6 flex-shrink-0">{icon}</div>
-        <div className="text-base text-text-primary">
+        <div className="text-base text-text-primary shrink-0">
           {dataSourceInfo[source].name}
         </div>
-        <div>{name}</div>
+        <div className="truncate">{name}</div>
+        {status && statusLabel && (
+          <FileStatusBadge
+            status={status as RunningStatus}
+            name={statusLabel}
+            className="!w-auto whitespace-nowrap px-2 h-6 text-xs shrink-0"
+          />
+        )}
       </div>
       <div className="flex items-center ">
         <div className="items-center gap-1 hidden mr-5 group-hover:flex">
@@ -106,7 +136,7 @@ const DataSourceItem = (props: DataSourceItemProps) => {
           <TooltipTrigger asChild>
             <Button
               variant={'transparent'}
-              className="border-none hidden group-hover:block"
+              className={`border-none ${isFailed || isStopped ? 'block' : 'hidden group-hover:block'}`}
               type="button"
               onClick={() => {
                 toDetail(id);
@@ -159,6 +189,26 @@ const LinkDataSource = (props: ILinkDataSourceProps) => {
   const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const prevIdsRef = useRef<string[]>([]);
   const linkedFromModalRef = useRef(false);
+  const { navigateToDataSourceDetail } = useNavigatePage();
+
+  const failedConnectors = useMemo(
+    () =>
+      (data || []).filter(
+        (item) =>
+          item.status === RunningStatus.FAIL ||
+          (item.status as string) === RunningStatusOld.FAIL,
+      ),
+    [data],
+  );
+  const stoppedConnectors = useMemo(
+    () =>
+      (data || []).filter(
+        (item) =>
+          item.status === RunningStatus.CANCEL ||
+          (item.status as string) === RunningStatusOld.CANCEL,
+      ),
+    [data],
+  );
 
   const pipelineNode: IDataSourceNodeProps[] = useMemo(() => {
     if (data && data.length > 0) {
@@ -236,6 +286,48 @@ const LinkDataSource = (props: ILinkDataSourceProps) => {
           </Button>
         </div>
       </section>
+      {failedConnectors.length > 0 && (
+        <div className="flex items-center justify-between gap-2 rounded-md border border-state-error/50 bg-state-error/10 px-3 py-2 text-xs text-state-error">
+          <div className="flex items-center gap-2 min-w-0">
+            <AlertTriangle className="size-4 shrink-0" />
+            <span className="truncate">
+              {t('knowledgeConfiguration.dataSourceSyncFailedBanner', {
+                names: failedConnectors.map((c) => c.name).join(', '),
+              })}
+            </span>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 shrink-0 border-state-error/40 text-state-error hover:bg-state-error/15"
+            onClick={() => navigateToDataSourceDetail(failedConnectors[0].id)}
+          >
+            {t('knowledgeConfiguration.viewDataSourceSettings')}
+          </Button>
+        </div>
+      )}
+      {failedConnectors.length === 0 && stoppedConnectors.length > 0 && (
+        <div className="flex items-center justify-between gap-2 rounded-md border border-state-warning/50 bg-state-warning/10 px-3 py-2 text-xs text-state-warning">
+          <div className="flex items-center gap-2 min-w-0">
+            <AlertTriangle className="size-4 shrink-0" />
+            <span className="truncate">
+              {t('knowledgeConfiguration.dataSourceSyncStoppedBanner', {
+                names: stoppedConnectors.map((c) => c.name).join(', '),
+              })}
+            </span>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 shrink-0 border-state-warning/40 text-state-warning hover:bg-state-warning/15"
+            onClick={() => navigateToDataSourceDetail(stoppedConnectors[0].id)}
+          >
+            {t('knowledgeConfiguration.viewDataSourceSettings')}
+          </Button>
+        </div>
+      )}
       <section className="flex flex-col gap-2">
         {pipelineNode.map(
           (item) =>

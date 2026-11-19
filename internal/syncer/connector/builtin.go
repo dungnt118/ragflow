@@ -31,6 +31,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "feishu_wiki", NewFeishuWikiConnector)
 	registerBuiltIn(registry, "rss", NewRSSConnector)
 	registerBuiltIn(registry, "sitemap", NewSitemapConnector)
+	registerBuiltIn(registry, "web_crawler", NewWebCrawlerConnector)
 	registerBuiltIn(registry, "salesforce", NewSalesforceConnector)
 	registerBuiltIn(registry, "bitbucket", NewBitbucketConnector)
 	registerBuiltIn(registry, "azure_devops", NewAzureDevOpsConnector)

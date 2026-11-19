@@ -1,10 +1,11 @@
-import { useContext, useMemo } from 'react';
+import { useContext, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NavLink, Outlet, useNavigate } from 'react-router';
 
 import { useMutation, useQuery } from '@tanstack/react-query';
 
 import {
+  LucideMenu,
   LucideMonitor,
   LucideServerCrash,
   LucideSquareUserRound,
@@ -14,6 +15,7 @@ import {
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { getSystemVersion, logout } from '@/services/admin-service';
@@ -88,63 +90,102 @@ const AdminNavigationLayout = () => {
     retry: false,
   });
 
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const renderNavContent = (onItemClick?: () => void) => (
+    <>
+      <div className="flex items-center mb-6">
+        <img className="size-8 mr-5" src="/logo.svg" alt="logo" />
+        <span className="text-xl font-bold">{t('admin.title')}</span>
+      </div>
+
+      <nav>
+        <ul className="space-y-4">
+          {navItems.map((it) => (
+            <li key={it.path}>
+              <NavLink
+                to={it.path}
+                onClick={onItemClick}
+                className={({ isActive }) =>
+                  cn(
+                    'px-4 py-3 rounded-lg',
+                    'text-base w-full flex items-center justify-start text-text-secondary',
+                    'hover:bg-bg-card focus:bg-bg-card focus-visible:bg-bg-card',
+                    'hover:text-text-primary focus:text-text-primary focus-visible:text-text-primary',
+                    'active:text-text-primary',
+                    'transition-colors',
+                    {
+                      'bg-bg-card text-text-primary': isActive,
+                    },
+                  )
+                }
+              >
+                {it.icon}
+                <span className="ml-3">{it.name}</span>
+              </NavLink>
+            </li>
+          ))}
+        </ul>
+      </nav>
+
+      <div className="mt-auto space-y-4">
+        <div className="flex justify-between items-center">
+          <span className="leading-none text-xs text-accent-primary">
+            {version}
+          </span>
+
+          <ThemeSwitch />
+        </div>
+
+        <Button
+          size="lg"
+          variant="transparent"
+          block
+          onClick={() => {
+            onItemClick?.();
+            logoutMutation.mutate();
+          }}
+        >
+          {t('header.logout')}
+        </Button>
+      </div>
+    </>
+  );
+
   return (
-    <main className="w-screen h-screen flex flex-row px-6 pt-12 pb-6 dark:*:focus-visible:ring-white">
-      <aside className="w-72 mr-6 flex flex-col gap-6">
-        <div className="flex items-center mb-6">
-          <img className="size-8 mr-5" src="/logo.svg" alt="logo" />
-          <span className="text-xl font-bold">{t('admin.title')}</span>
-        </div>
-
-        <nav>
-          <ul className="space-y-4">
-            {navItems.map((it) => (
-              <li key={it.path}>
-                <NavLink
-                  to={it.path}
-                  className={({ isActive }) =>
-                    cn(
-                      'px-4 py-3 rounded-lg',
-                      'text-base w-full flex items-center justify-start text-text-secondary',
-                      'hover:bg-bg-card focus:bg-bg-card focus-visible:bg-bg-card',
-                      'hover:text-text-primary focus:text-text-primary focus-visible:text-text-primary',
-                      'active:text-text-primary',
-                      'transition-colors',
-                      {
-                        'bg-bg-card text-text-primary': isActive,
-                      },
-                    )
-                  }
-                >
-                  {it.icon}
-                  <span className="ml-3">{it.name}</span>
-                </NavLink>
-              </li>
-            ))}
-          </ul>
-        </nav>
-
-        <div className="mt-auto space-y-4">
-          <div className="flex justify-between items-center">
-            <span className="leading-none text-xs text-accent-primary">
-              {version}
-            </span>
-
-            <ThemeSwitch />
-          </div>
-
+    <main className="w-screen h-screen flex flex-col md:flex-row px-3 md:px-6 pt-3 md:pt-12 pb-3 md:pb-6 dark:*:focus-visible:ring-white overflow-hidden">
+      {/* Mobile Top Header */}
+      <div className="flex items-center justify-between md:hidden pb-3 border-b border-border-button mb-3 shrink-0">
+        <div className="flex items-center gap-3">
           <Button
-            size="lg"
-            variant="transparent"
-            block
-            onClick={() => logoutMutation.mutate()}
+            variant="ghost"
+            size="icon"
+            onClick={() => setMobileOpen(true)}
+            aria-label="Admin Menu"
           >
-            {t('header.logout')}
+            <LucideMenu className="size-5" />
           </Button>
+          <img className="size-7" src="/logo.svg" alt="logo" />
+          <span className="text-lg font-bold">{t('admin.title')}</span>
         </div>
+      </div>
+
+      {/* Desktop Sidebar */}
+      <aside className="hidden md:flex w-72 mr-6 shrink-0 flex-col gap-6">
+        {renderNavContent()}
       </aside>
 
-      <section className="flex-1 h-full">
+      {/* Mobile Sheet Drawer */}
+      <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+        <SheetContent
+          side="left"
+          className="w-[85vw] max-w-xs p-5 flex flex-col gap-6"
+        >
+          {renderNavContent(() => setMobileOpen(false))}
+        </SheetContent>
+      </Sheet>
+
+      <section className="flex-1 h-full min-w-0 overflow-auto">
         <Outlet />
       </section>
     </main>

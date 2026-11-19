@@ -2,11 +2,13 @@
     "id": 36,
     "title": {
         "en": "One",
+        "vi": "Toàn văn Đơn nhất (One)",
         "de": "Ganzes Dokument",
         "zh": "全文"
     },
     "description": {
-        "en": "This template treats the entire parsed file as one segment. Best for short documents or highly coherent text where maintaining full context is critical.",
+        "en": "This template keeps the entire parsed file as one single chunk without splitting. Use cases: Short announcements, executive summaries, individual candidate resumes (CVs), single-page policies, or short documents where preserving 100% end-to-end context is critical.",
+        "vi": "Giữ trọn vẹn toàn bộ nội dung tệp thành một phân đoạn (chunk) duy nhất mà không cắt nhỏ. Tình huống sử dụng: Hồ sơ ứng viên (CV), thông báo nội bộ ngắn, tóm tắt điều hành (Executive Summary), phiếu yêu cầu hoặc văn bản ngắn cần bảo toàn 100% ngữ cảnh từ đầu đến cuối.",
         "de": "Diese Vorlage behandelt die gesamte geparste Datei als ein einzelnes Segment, ohne sie weiter aufzuteilen. Sie eignet sich für kurze Dokumente, stark zusammenhängende Texte oder Fälle, in denen der vollständige Kontext erhalten bleiben soll.",
         "zh": "此模板将解析后的文件作为一个完整片段处理，不再进一步切分，适用于篇幅较短、内容连贯性较强，或需要保留全文上下文的文档。"
     },

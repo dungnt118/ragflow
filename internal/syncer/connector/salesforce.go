@@ -438,10 +438,7 @@ func salesforceTokenErrorDetail(body []byte) string {
 		}
 	}
 	text := strings.TrimSpace(string(body))
-	if len(text) > 200 {
-		text = text[:200]
-	}
-	return text
+	return truncateRunes(text, 200)
 }
 
 // apiURL builds the full Salesforce REST URL for a service-relative path from

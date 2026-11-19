@@ -95,3 +95,32 @@ func TestGetDownloadStatusAggregatesLinkedConnectorFiles(t *testing.T) {
 func downloadInt64Pointer(value int64) *int64 {
 	return &value
 }
+
+func TestGetDownloadStatusCountsTerminalSyncFail(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	if err := db.Create(&entity.Connector{
+		ID: "conn-fail", TenantID: "tenant-1", Name: "failed-conn", Source: "web_crawler", InputType: "poll", Config: entity.JSONMap{}, Status: dao.SyncStatusFail,
+	}).Error; err != nil {
+		t.Fatalf("create connector: %v", err)
+	}
+	if err := db.Create(&entity.Connector2Kb{ID: "map-fail", ConnectorID: "conn-fail", KbID: "dataset-fail"}).Error; err != nil {
+		t.Fatalf("create mapping: %v", err)
+	}
+	if err := db.Create(&entity.SyncLogs{
+		ID: "task-fail-latest", ConnectorID: "conn-fail", KbID: "dataset-fail", TaskType: dao.TaskTypeSync,
+		Status: dao.SyncStatusFail, ErrorCount: 3, BaseModel: entity.BaseModel{UpdateTime: downloadInt64Pointer(1000)},
+	}).Error; err != nil {
+		t.Fatalf("create sync log: %v", err)
+	}
+
+	svc := NewDatasetService()
+	status, err := svc.getDownloadStatus(context.Background(), "dataset-fail")
+	if err != nil {
+		t.Fatalf("getDownloadStatus: %v", err)
+	}
+	if status.FailCount != 3 {
+		t.Fatalf("status.FailCount = %d, want 3", status.FailCount)
+	}
+}

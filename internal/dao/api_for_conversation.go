@@ -79,13 +79,24 @@ func (dao *API4ConversationDAO) UpdateHistory(ctx context.Context, db *gorm.DB, 
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		query := tx.Session(&gorm.Session{SkipHooks: true}).Model(&entity.API4Conversation{}).Where("id = ? AND dialog_id = ? AND user_id = ?", sessionID, agentID, userID)
 		var parent entity.API4Conversation
-		if err := query.Session(&gorm.Session{}).Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Take(&parent).Error; err != nil {
+		if err := query.Session(&gorm.Session{}).Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "thumb_up").Take(&parent).Error; err != nil {
 			return err
 		}
-		if err := query.Updates(updates).Error; err != nil {
+		var thumbDelta int
+		if history.ThumbUpDelta == nil {
+			history.ThumbUpDelta = &thumbDelta
+		}
+		if err := updateConversationHistory(ctx, tx, apiConversationMessageTable, apiConversationReferenceTable, sessionID, history); err != nil {
 			return err
 		}
-		return updateConversationHistory(ctx, tx, apiConversationMessageTable, apiConversationReferenceTable, sessionID, history)
+		if *history.ThumbUpDelta != 0 {
+			nextThumbUp := parent.ThumbUp + *history.ThumbUpDelta
+			if nextThumbUp < 0 {
+				nextThumbUp = 0
+			}
+			updates["thumb_up"] = nextThumbUp
+		}
+		return query.Updates(updates).Error
 	})
 }
 

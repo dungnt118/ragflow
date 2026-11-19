@@ -520,3 +520,363 @@ func TestGitHubValidateConnectorSettingMissingInputs(t *testing.T) {
 		}
 	})
 }
+
+// TestGitHubConnectorCodeFilesDirectorySyncAndMetaFields verifies syncing a specific folder (e.g. docs/),
+// filtering supported files, relative SemanticIdentifier naming, web_url metadata, and lazy blob fetching.
+func TestGitHubConnectorCodeFilesDirectorySyncAndMetaFields(t *testing.T) {
+	connector, err := NewGitHubConnector(map[string]any{
+		"repository_owner":      "hung2604",
+		"repository_name":       "BA-Demego",
+		"include_pull_requests": false,
+		"include_issues":        false,
+		"include_code_files":    true,
+		"branch":                "",
+		"sync_scope":            "directory",
+		"folder_path":           "/docs/",
+		"batch_size":            10,
+		"credentials":           map[string]any{"github_access_token": "token"},
+	})
+	if err != nil {
+		t.Fatalf("NewGitHubConnector failed: %v", err)
+	}
+	connector.baseURL = "https://api.github.test"
+	connector.doJSON = func(ctx context.Context, apiURL string, out any) (http.Header, error) {
+		parsed, err := url.Parse(apiURL)
+		if err != nil {
+			t.Fatalf("parse api url: %v", err)
+		}
+		switch parsed.Path {
+		case "/repos/hung2604/BA-Demego":
+			return http.Header{}, json.Unmarshal([]byte(`{"full_name":"hung2604/BA-Demego","default_branch":"main"}`), out)
+		case "/repos/hung2604/BA-Demego/git/trees/main":
+			treeJSON := `{
+				"sha": "root-sha",
+				"truncated": false,
+				"tree": [
+					{"path": "README.md", "mode": "100644", "type": "blob", "sha": "sha-readme", "size": 120},
+					{"path": "docs", "mode": "040000", "type": "tree", "sha": "sha-docs-tree", "size": 0},
+					{"path": "docs/23-dien-nuoc.md", "mode": "100644", "type": "blob", "sha": "sha-23", "size": 512},
+					{"path": "docs/sub/api-spec.yaml", "mode": "100644", "type": "blob", "sha": "sha-yaml", "size": 256},
+					{"path": "docs/node_modules/pkg.md", "mode": "100644", "type": "blob", "sha": "sha-nm", "size": 100},
+					{"path": "docs/demo.mp4", "mode": "100644", "type": "blob", "sha": "sha-video", "size": 1024},
+					{"path": "docs/submodule", "mode": "160000", "type": "blob", "sha": "sha-submod", "size": 0},
+					{"path": "docs/huge.pdf", "mode": "100644", "type": "blob", "sha": "sha-huge", "size": 25000000}
+				]
+			}`
+			return http.Header{}, json.Unmarshal([]byte(treeJSON), out)
+		default:
+			t.Fatalf("unexpected api path %s", parsed.Path)
+			return nil, nil
+		}
+	}
+
+	blobCalls := 0
+	connector.doRaw = func(ctx context.Context, apiURL string) ([]byte, error) {
+		blobCalls++
+		parsed, err := url.Parse(apiURL)
+		if err != nil {
+			t.Fatalf("parse raw url: %v", err)
+		}
+		if parsed.Path == "/repos/hung2604/BA-Demego/git/blobs/sha-23" {
+			return []byte("# Quy trinh Dien Nuoc"), nil
+		}
+		if parsed.Path == "/repos/hung2604/BA-Demego/git/blobs/sha-yaml" {
+			return []byte("openapi: 3.0.0"), nil
+		}
+		t.Fatalf("unexpected blob path %s", parsed.Path)
+		return nil, nil
+	}
+
+	end := mustTime(t, "2026-01-04T00:00:00Z")
+	session, err := connector.OpenSync(t.Context(), SyncRequest{WindowEnd: end})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	// Verify NextBatch is lazy: no blob download happens during NextBatch
+	if blobCalls != 0 {
+		t.Fatalf("blobCalls during NextBatch = %d, want 0", blobCalls)
+	}
+	if len(batch.Documents) != 2 {
+		t.Fatalf("documents len = %d, want 2: %+v", len(batch.Documents), batch.Documents)
+	}
+
+	doc0 := batch.Documents[0]
+	if doc0.SemanticIdentifier != "23-dien-nuoc.md" {
+		t.Fatalf("doc0 SemanticIdentifier = %q, want 23-dien-nuoc.md", doc0.SemanticIdentifier)
+	}
+	if doc0.SourceID != "https://github.com/hung2604/BA-Demego/blob/main/docs/23-dien-nuoc.md" {
+		t.Fatalf("doc0 SourceID = %q", doc0.SourceID)
+	}
+	if doc0.Metadata["web_url"] != "https://github.com/hung2604/BA-Demego/blob/main/docs/23-dien-nuoc.md" {
+		t.Fatalf("doc0 web_url = %v", doc0.Metadata["web_url"])
+	}
+	if doc0.Metadata["path"] != "docs/23-dien-nuoc.md" || doc0.Metadata["branch"] != "main" || doc0.Metadata["object_type"] != "CodeFile" {
+		t.Fatalf("doc0 metadata = %+v", doc0.Metadata)
+	}
+
+	doc1 := batch.Documents[1]
+	if doc1.SemanticIdentifier != "sub_api-spec.yaml" {
+		t.Fatalf("doc1 SemanticIdentifier = %q, want sub_api-spec.yaml", doc1.SemanticIdentifier)
+	}
+
+	// Verify Fetch downloads raw blob by SHA
+	fetcher, ok := session.(Fetcher)
+	if !ok {
+		t.Fatalf("session does not implement Fetcher")
+	}
+	rawBytes, err := fetcher.Fetch(context.Background(), *doc0.FetchRef)
+	if err != nil {
+		t.Fatalf("Fetch failed: %v", err)
+	}
+	if string(rawBytes) != "# Quy trinh Dien Nuoc" {
+		t.Fatalf("fetched content = %q", string(rawBytes))
+	}
+	if blobCalls != 1 {
+		t.Fatalf("blobCalls = %d, want 1", blobCalls)
+	}
+
+	if _, err = session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
+		t.Fatalf("NextBatch EOF = %v", err)
+	}
+
+	// Verify OpenPrune returns matching SourceIDs for the 2 valid files in docs/
+	pruneSession, err := connector.OpenPrune(t.Context(), PruneRequest{})
+	if err != nil {
+		t.Fatalf("OpenPrune failed: %v", err)
+	}
+	pruneBatch, err := pruneSession.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("Prune NextBatch failed: %v", err)
+	}
+	if len(pruneBatch.Documents) != 2 {
+		t.Fatalf("prune docs len = %d, want 2", len(pruneBatch.Documents))
+	}
+	if pruneBatch.Documents[0].SourceID != doc0.SourceID || pruneBatch.Documents[1].SourceID != doc1.SourceID {
+		t.Fatalf("prune source IDs = %+v", pruneBatch.Documents)
+	}
+}
+
+// TestGitHubConnectorCodeFilesTruncatedTreeAbortsSyncAndPrune verifies truncated=true aborts both sync and prune.
+func TestGitHubConnectorCodeFilesTruncatedTreeAbortsSyncAndPrune(t *testing.T) {
+	connector, err := NewGitHubConnector(map[string]any{
+		"repository_owner":      "hung2604",
+		"repository_name":       "BA-Demego",
+		"include_pull_requests": false,
+		"include_issues":        false,
+		"include_code_files":    true,
+		"sync_scope":            "repository",
+		"credentials":           map[string]any{"github_access_token": "token"},
+	})
+	if err != nil {
+		t.Fatalf("NewGitHubConnector failed: %v", err)
+	}
+	connector.baseURL = "https://api.github.test"
+	connector.doJSON = func(ctx context.Context, apiURL string, out any) (http.Header, error) {
+		parsed, _ := url.Parse(apiURL)
+		switch parsed.Path {
+		case "/repos/hung2604/BA-Demego":
+			return http.Header{}, json.Unmarshal([]byte(`{"full_name":"hung2604/BA-Demego","default_branch":"main"}`), out)
+		case "/repos/hung2604/BA-Demego/git/trees/main":
+			return http.Header{}, json.Unmarshal([]byte(`{"sha":"root","truncated":true,"tree":[]}`), out)
+		default:
+			t.Fatalf("unexpected path %s", parsed.Path)
+			return nil, nil
+		}
+	}
+
+	syncSession, err := connector.OpenSync(t.Context(), SyncRequest{WindowEnd: time.Now().UTC()})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	if _, err := syncSession.NextBatch(context.Background()); err == nil || !strings.Contains(err.Error(), "truncated") {
+		t.Fatalf("expected truncated error from Sync NextBatch, got %v", err)
+	}
+
+	pruneSession, err := connector.OpenPrune(t.Context(), PruneRequest{})
+	if err != nil {
+		t.Fatalf("OpenPrune failed: %v", err)
+	}
+	if _, err := pruneSession.NextBatch(context.Background()); err == nil || !strings.Contains(err.Error(), "truncated") {
+		t.Fatalf("expected truncated error from Prune NextBatch, got %v", err)
+	}
+}
+
+// TestGitHubValidateConnectorSettingCodeFiles verifies validation of folder_path, sync_scope, and branch existence.
+func TestGitHubValidateConnectorSettingCodeFiles(t *testing.T) {
+	t.Run("all sources disabled fails", func(t *testing.T) {
+		connector, err := NewGitHubConnector(map[string]any{
+			"repository_owner":      "hung2604",
+			"repository_name":       "BA-Demego",
+			"include_pull_requests": false,
+			"include_issues":        false,
+			"include_code_files":    false,
+			"credentials":           map[string]any{"github_access_token": "token"},
+		})
+		if err != nil {
+			t.Fatalf("NewGitHubConnector failed: %v", err)
+		}
+		err = connector.ValidateConnectorSetting(t.Context(), nil)
+		var valErr *ConnectorValidationError
+		if !errors.As(err, &valErr) {
+			t.Fatalf("err = %v, want ConnectorValidationError", err)
+		}
+	})
+
+	t.Run("directory scope with empty folder_path fails", func(t *testing.T) {
+		connector, err := NewGitHubConnector(map[string]any{
+			"repository_owner":   "hung2604",
+			"repository_name":    "BA-Demego",
+			"include_code_files": true,
+			"sync_scope":         "directory",
+			"folder_path":        "   ",
+			"credentials":        map[string]any{"github_access_token": "token"},
+		})
+		if err != nil {
+			t.Fatalf("NewGitHubConnector failed: %v", err)
+		}
+		err = connector.ValidateConnectorSetting(t.Context(), nil)
+		var valErr *ConnectorValidationError
+		if !errors.As(err, &valErr) || !strings.Contains(valErr.Message, "folder_path") {
+			t.Fatalf("err = %v, want folder_path ConnectorValidationError", err)
+		}
+	})
+
+	t.Run("path traversal in folder_path fails", func(t *testing.T) {
+		connector, err := NewGitHubConnector(map[string]any{
+			"repository_owner":   "hung2604",
+			"repository_name":    "BA-Demego",
+			"include_code_files": true,
+			"sync_scope":         "directory",
+			"folder_path":        "docs/../secret",
+			"credentials":        map[string]any{"github_access_token": "token"},
+		})
+		if err != nil {
+			t.Fatalf("NewGitHubConnector failed: %v", err)
+		}
+		err = connector.ValidateConnectorSetting(t.Context(), nil)
+		var valErr *ConnectorValidationError
+		if !errors.As(err, &valErr) || !strings.Contains(valErr.Message, "..") {
+			t.Fatalf("err = %v, want path traversal ConnectorValidationError", err)
+		}
+	})
+
+	t.Run("valid directory exists in repo tree", func(t *testing.T) {
+		connector, err := NewGitHubConnector(map[string]any{
+			"repository_owner":   "hung2604",
+			"repository_name":    "BA-Demego",
+			"include_code_files": true,
+			"branch":             "main",
+			"sync_scope":         "directory",
+			"folder_path":        "docs",
+			"credentials":        map[string]any{"github_access_token": "token"},
+		})
+		if err != nil {
+			t.Fatalf("NewGitHubConnector failed: %v", err)
+		}
+		connector.baseURL = "https://api.github.test"
+		connector.doJSON = func(ctx context.Context, apiURL string, out any) (http.Header, error) {
+			parsed, _ := url.Parse(apiURL)
+			switch parsed.Path {
+			case "/orgs/hung2604":
+				return http.Header{}, json.Unmarshal([]byte(`{"login":"hung2604"}`), out)
+			case "/orgs/hung2604/repos":
+				return http.Header{}, json.Unmarshal([]byte(`[{"full_name":"hung2604/BA-Demego"}]`), out)
+			case "/repos/hung2604/BA-Demego":
+				return http.Header{}, json.Unmarshal([]byte(`{"full_name":"hung2604/BA-Demego","default_branch":"main"}`), out)
+			case "/repos/hung2604/BA-Demego/git/trees/main":
+				return http.Header{}, json.Unmarshal([]byte(`{"sha":"root","truncated":false,"tree":[{"path":"docs/23-dien-nuoc.md","mode":"100644","type":"blob","sha":"s1","size":10}]}`), out)
+			default:
+				t.Fatalf("unexpected path %s", parsed.Path)
+				return nil, nil
+			}
+		}
+		if err := connector.ValidateConnectorSetting(t.Context(), nil); err != nil {
+			t.Fatalf("ValidateConnectorSetting failed: %v", err)
+		}
+	})
+}
+
+// TestGitHubConnectorCodeFilesIncrementalSHAFingerprintSkip verifies that when blob.SHA is unchanged across
+// sync cycles, stored fingerprint matches in O(1) with 0 blob API calls, and only changed SHA files are fetched.
+func TestGitHubConnectorCodeFilesIncrementalSHAFingerprintSkip(t *testing.T) {
+	currentSHA23 := "sha-23-v1"
+	connector, err := NewGitHubConnector(map[string]any{
+		"repository_owner":      "hung2604",
+		"repository_name":       "BA-Demego",
+		"include_pull_requests": false,
+		"include_issues":        false,
+		"include_code_files":    true,
+		"branch":                "main",
+		"sync_scope":            "directory",
+		"folder_path":           "docs",
+		"credentials":           map[string]any{"github_access_token": "token"},
+	})
+	if err != nil {
+		t.Fatalf("NewGitHubConnector failed: %v", err)
+	}
+	connector.baseURL = "https://api.github.test"
+	connector.doJSON = func(ctx context.Context, apiURL string, out any) (http.Header, error) {
+		parsed, _ := url.Parse(apiURL)
+		switch parsed.Path {
+		case "/repos/hung2604/BA-Demego":
+			return http.Header{}, json.Unmarshal([]byte(`{"full_name":"hung2604/BA-Demego","default_branch":"main"}`), out)
+		case "/repos/hung2604/BA-Demego/git/trees/main":
+			treeJSON := `{"sha":"root","truncated":false,"tree":[
+				{"path":"docs/08-so-quy.md","mode":"100644","type":"blob","sha":"sha-08-v1","size":200},
+				{"path":"docs/23-dien-nuoc.md","mode":"100644","type":"blob","sha":"` + currentSHA23 + `","size":300}
+			]}`
+			return http.Header{}, json.Unmarshal([]byte(treeJSON), out)
+		default:
+			t.Fatalf("unexpected path %s", parsed.Path)
+			return nil, nil
+		}
+	}
+
+	blobCalls := 0
+	connector.doRaw = func(ctx context.Context, apiURL string) ([]byte, error) {
+		blobCalls++
+		return []byte("markdown content"), nil
+	}
+
+	storedFingerprints := map[string]string{}
+	runCycle := func() int {
+		before := blobCalls
+		s, err := connector.OpenSync(t.Context(), SyncRequest{WindowEnd: time.Now().UTC()})
+		if err != nil {
+			t.Fatalf("OpenSync: %v", err)
+		}
+		batch, err := s.NextBatch(context.Background())
+		if err != nil {
+			t.Fatalf("NextBatch: %v", err)
+		}
+		fetcher := s.(Fetcher)
+		for _, doc := range batch.Documents {
+			if storedFingerprints[doc.SourceID] == doc.Fingerprint {
+				continue
+			}
+			if _, err := fetcher.Fetch(context.Background(), *doc.FetchRef); err != nil {
+				t.Fatalf("Fetch: %v", err)
+			}
+			storedFingerprints[doc.SourceID] = doc.Fingerprint
+		}
+		return blobCalls - before
+	}
+
+	// Cycle 1: Initial sync downloads both files (2 blob calls)
+	if calls := runCycle(); calls != 2 {
+		t.Fatalf("Cycle 1 blob calls = %d, want 2", calls)
+	}
+	// Cycle 2: Unchanged SHA -> 0 blob calls (PERF-01)
+	if calls := runCycle(); calls != 0 {
+		t.Fatalf("Cycle 2 blob calls = %d, want 0", calls)
+	}
+	// Cycle 3: Update 1 file SHA -> 1 blob call
+	currentSHA23 = "sha-23-v2"
+	if calls := runCycle(); calls != 1 {
+		t.Fatalf("Cycle 3 blob calls = %d, want 1", calls)
+	}
+}

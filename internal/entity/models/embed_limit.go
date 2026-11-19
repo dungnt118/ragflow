@@ -57,6 +57,7 @@ func (m *EmbeddingModel) Embed(ctx context.Context, req EmbedRequest, embeddingC
 	if len(req.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
+	usage = prepareModelUsage(ctx, usage, m.info, m.ModelName, "embedding")
 	tokenizerID, quotaKey := m.ResolveTokenizerID(), m.QuotaKey()
 	if err := tokenizer.RefuseUnavailableCounter(tokenizerID, quotaKey); err != nil {
 		return nil, err
@@ -77,6 +78,7 @@ func (m *EmbeddingModel) Embed(ctx context.Context, req EmbedRequest, embeddingC
 			if len(embeds) != len(req.Texts) {
 				return nil, fmt.Errorf("embedding model: unexpected embedding count: got %d, want %d", len(embeds), len(req.Texts))
 			}
+			finalizeEmbeddingUsage(usage, req.Texts, embeds)
 			return embeds, nil
 		}
 		if !tokenizer.IsOverLimitError(err) {
@@ -94,7 +96,11 @@ func (m *EmbeddingModel) Embed(ctx context.Context, req EmbedRequest, embeddingC
 	// they had. A failure here is reported as isolation's own - it names the input and
 	// the floor it reached, while the batch rejection above says only "the whole
 	// request was too big".
-	return m.embedIsolating(ctx, req, embeddingConfig, usage, counter, cal, calKey, maxTokens, window)
+	embeds, err := m.embedIsolating(ctx, req, embeddingConfig, usage, counter, cal, calKey, maxTokens, window)
+	if err == nil {
+		finalizeEmbeddingUsage(usage, req.Texts, embeds)
+	}
+	return embeds, err
 }
 
 // embedCut trims every text to budget and performs exactly one embedding call.

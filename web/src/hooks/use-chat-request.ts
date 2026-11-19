@@ -17,7 +17,7 @@
 import { FileUploadProps } from '@/components/file-upload';
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
-import { ChatSearchParams } from '@/constants/chat';
+import { ChatSearchParams, SharedFrom } from '@/constants/chat';
 import { ListDeletionKey } from '@/constants/list-deletion';
 import {
   IAgenticRagSettings,
@@ -497,9 +497,20 @@ export const useDeleteMessage = () => {
   return { data, loading, deleteMessage: mutateAsync };
 };
 
-export const useFeedback = () => {
+export interface IUseFeedbackOptions {
+  sessionId?: string;
+  isShared?: boolean;
+  isAgent?: boolean;
+  targetId?: string;
+  channel?: string;
+}
+
+export const useFeedback = (options?: IUseFeedbackOptions) => {
   const { conversationId } = useGetChatSearchParams();
-  const { id: chatId } = useParams();
+  const { id: routeId } = useParams();
+  const { from, sharedId } = useGetSharedChatSearchParams();
+  const [searchParams] = useSearchParams();
+  const exploreSessionId = searchParams.get('session_id') || '';
 
   const {
     data,
@@ -508,17 +519,67 @@ export const useFeedback = () => {
   } = useMutation({
     mutationKey: [ChatApiAction.Feedback],
     mutationFn: async (params: IFeedbackRequestBody) => {
+      const effectiveSessionId =
+        options?.sessionId || conversationId || exploreSessionId;
+      const isSharedMode = Boolean(options?.isShared || sharedId);
+      const isAgentMode = Boolean(
+        options?.isAgent || from === SharedFrom.Agent,
+      );
+      const effectiveTargetId =
+        options?.targetId || (isSharedMode ? sharedId : routeId) || '';
+
+      let url = '';
+      if (isSharedMode) {
+        url = isAgentMode
+          ? api.agentbotThumbup(
+              effectiveTargetId,
+              effectiveSessionId,
+              params.messageId!,
+            )
+          : api.chatbotThumbup(
+              effectiveTargetId,
+              effectiveSessionId,
+              params.messageId!,
+            );
+      } else if (isAgentMode) {
+        url = api.agentThumbup(
+          effectiveTargetId,
+          effectiveSessionId,
+          params.messageId!,
+        );
+      } else {
+        url = api.thumbup(
+          effectiveTargetId,
+          effectiveSessionId,
+          params.messageId!,
+        );
+      }
+
+      const payload: Record<string, any> = {
+        thumbup: params.thumbup,
+        feedback: params.feedback,
+      };
+      if (params.csat_score !== undefined) {
+        payload.csat_score = params.csat_score;
+      }
+      if (params.criteria !== undefined) {
+        payload.criteria = params.criteria;
+      }
+      if (params.channel || options?.channel) {
+        payload.channel = params.channel || options?.channel;
+      }
+
       const { data } = await chatService.thumbup(
         {
-          url: api.thumbup(chatId!, conversationId, params.messageId!),
-          data: { thumbup: params.thumbup, feedback: params.feedback },
+          url,
+          data: payload,
         },
         true,
       );
       if (data.code === 0) {
         message.success(i18n.t(`message.operated`));
       }
-      return data.code;
+      return data;
     },
   });
 

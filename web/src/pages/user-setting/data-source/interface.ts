@@ -40,6 +40,7 @@ export interface IDataSourceBase {
   id: string;
   name: string;
   source: DataSourceKey;
+  status?: string;
 }
 
 export interface IDataSourceLog {

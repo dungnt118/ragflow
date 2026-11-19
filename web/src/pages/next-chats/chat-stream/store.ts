@@ -44,6 +44,11 @@ export type ChatStreamState = {
   failStream(conversationId: string, pendingInput: string): void;
   consumePendingInput(conversationId: string): void;
   removeMessageById(conversationId: string, messageId: string): void;
+  updateMessageFeedback(
+    conversationId: string,
+    messageId: string,
+    patch: Partial<Pick<IMessage, 'thumbup' | 'feedback' | 'feedback_detail'>>,
+  ): void;
   endStream(conversationId: string): void;
   stopStream(conversationId: string): void;
   removeSessions(conversationIds: string[]): void;
@@ -384,6 +389,29 @@ export const useChatStreamStore = create<ChatStreamState>()(
           },
           false,
           'endStream',
+        );
+      },
+
+      updateMessageFeedback: (conversationId, messageId, patch) => {
+        if (!conversationId || !messageId) return;
+        set(
+          (state) => {
+            const previous = state.sessions[conversationId];
+            if (!previous) return state;
+            return {
+              sessions: {
+                ...state.sessions,
+                [conversationId]: {
+                  ...previous,
+                  messages: previous.messages.map((msg) =>
+                    msg.id === messageId ? { ...msg, ...patch } : msg,
+                  ),
+                },
+              },
+            };
+          },
+          false,
+          'updateMessageFeedback',
         );
       },
 

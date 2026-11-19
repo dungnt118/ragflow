@@ -22,16 +22,19 @@ import {
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
 import { IModalProps } from '@/interfaces/common';
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { FileCode2 } from 'lucide-react';
 import {
   DataSourceFormDefaultValues,
+  DataSourceKey,
   getCommonExtraDefaultValues,
   getDataSourceFormBaseFields,
   getDataSourceFieldsWithExtras,
   mergeDataSourceFormValues,
 } from './constant';
+import { GithubWorkflowGuideModal } from './component/github-workflow-guide-modal';
 import { useTestDataSource } from './hooks';
 import { IDataSorceInfo } from './interface';
 
@@ -44,6 +47,15 @@ const AddDataSourceModal = ({
 }: IModalProps<FieldValues> & { sourceData?: IDataSorceInfo }) => {
   const { t } = useTranslation();
   const formRef = useRef<DynamicFormRef>(null);
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [guideFormSnapshot, setGuideFormSnapshot] = useState<FieldValues>({});
+  const isGithubSource = sourceData?.id === DataSourceKey.GITHUB;
+
+  const handleOpenGithubGuide = useCallback(() => {
+    const liveValues = formRef.current?.getValues?.() || {};
+    setGuideFormSnapshot(liveValues);
+    setGuideOpen(true);
+  }, []);
   const fields = useMemo<FormFieldConfig[]>(() => {
     if (!sourceData) {
       return [];
@@ -118,6 +130,17 @@ const AddDataSourceModal = ({
       >
         <div className=" absolute bottom-0 right-0 left-0 flex items-center justify-end w-full gap-2 py-6 px-6">
           <DynamicForm.CancelButton handleCancel={handleCancel} />
+          {isGithubSource && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleOpenGithubGuide}
+              className="gap-1.5"
+            >
+              <FileCode2 className="size-4" />
+              {t('setting.githubWorkflowGuideButton')}
+            </Button>
+          )}
           <Button
             type="button"
             variant="outline"
@@ -134,6 +157,16 @@ const AddDataSourceModal = ({
           />
         </div>
       </DynamicForm.Root>
+      {isGithubSource && (
+        <GithubWorkflowGuideModal
+          open={guideOpen}
+          onOpenChange={setGuideOpen}
+          repositoryOwner={guideFormSnapshot?.config?.repository_owner}
+          repositoryName={guideFormSnapshot?.config?.repository_name}
+          branch={guideFormSnapshot?.config?.branch}
+          folderPath={guideFormSnapshot?.config?.folder_path}
+        />
+      )}
     </Modal>
   );
 };

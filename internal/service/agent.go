@@ -1300,6 +1300,11 @@ func (s *AgentService) DeleteAgent(ctx context.Context, userID, canvasID string)
 		return fmt.Errorf("check agent deletion permission: %w", err)
 	}
 	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if tx.Migrator().HasTable(&entity.ChatChannel{}) {
+			if err := tx.Model(&entity.ChatChannel{}).Where("agent_id = ?", canvasID).Update("agent_id", nil).Error; err != nil {
+				return fmt.Errorf("delete agent: unlink chat channels: %w", err)
+			}
+		}
 		if _, err := s.versionDAO.DeleteByCanvasIDTx(ctx, tx, canvasID); err != nil {
 			return fmt.Errorf("delete agent: cascade versions: %w", err)
 		}
@@ -1507,6 +1512,18 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	if sessionID == "" {
 		sessionID = common.GenerateToken()
 	}
+	appTitle := ""
+	if canvasRow.Title != nil {
+		appTitle = *canvasRow.Title
+	}
+	ctx = common.WithModelUsageMeta(ctx, common.ModelUsageMeta{
+		TenantID:  agentTenantID,
+		UserID:    userID,
+		AppID:     canvasID,
+		AppName:   appTitle,
+		AppType:   "agent",
+		SessionID: sessionID,
+	})
 	trustedFirstTouch := AgentSessionIDFromContext(ctx) == sessionID
 	if !newSession && s.api4ConversationDAO != nil && dao.DB != nil {
 		existingSession, err := s.api4ConversationDAO.GetMetadataBySessionID(ctx, dao.DB, sessionID, canvasID)

@@ -35,9 +35,9 @@ func GetDriver() *Driver {
 }
 
 func (d *Driver) CollectModelUsage(modelUsage *common.ModelUsage) error {
-	//if modelUsage != nil {
-	//	common.Info("CollectModelUsage", zap.Any("modelUsage", modelUsage.String()))
-	//}
+	if modelUsage != nil {
+		common.RecordModelUsage(modelUsage)
+	}
 	return nil
 }
 

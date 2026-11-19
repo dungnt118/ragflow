@@ -13,10 +13,11 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/service"
 )
 
 type fakeChatChannelService struct {
-	createFn  func(tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error)
+	createFn  func(tenantID, name, channelType string, config entity.JSONMap, chatID, agentID *string) (*entity.ChatChannel, error)
 	listFn    func(tenantID string) ([]*entity.ChatChannelListResponse, error)
 	getFn     func(userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error)
 	updateFn  func(userID, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error)
@@ -24,11 +25,11 @@ type fakeChatChannelService struct {
 	deleteFn  func(userID, channelID string) (bool, common.ErrorCode, error)
 }
 
-func (f fakeChatChannelService) CreateChatChannel(ctx context.Context, tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
+func (f fakeChatChannelService) CreateChatChannel(ctx context.Context, tenantID, name, channelType string, config entity.JSONMap, chatID, agentID *string) (*entity.ChatChannel, error) {
 	if f.createFn == nil {
 		return nil, errors.New("unexpected CreateChatChannel call")
 	}
-	return f.createFn(tenantID, name, channelType, config, chatID)
+	return f.createFn(tenantID, name, channelType, config, chatID, agentID)
 }
 
 func (f fakeChatChannelService) List(ctx context.Context, tenantID string) ([]*entity.ChatChannelListResponse, error) {
@@ -75,7 +76,7 @@ func TestChatChannelHandlerCreateSuccess(t *testing.T) {
 
 	h := &ChatChannelHandler{
 		chatChannelService: fakeChatChannelService{
-			createFn: func(tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
+			createFn: func(tenantID, name, channelType string, config entity.JSONMap, chatID, agentID *string) (*entity.ChatChannel, error) {
 				gotTenantID = tenantID
 				gotName = name
 				gotChannel = channelType
@@ -88,6 +89,7 @@ func TestChatChannelHandlerCreateSuccess(t *testing.T) {
 					Channel:  channelType,
 					Config:   config,
 					ChatID:   chatID,
+					AgentID:  agentID,
 					Status:   1,
 				}, nil
 			},
@@ -135,7 +137,7 @@ func TestChatChannelHandlerCreateInvalidRequestStopsEarly(t *testing.T) {
 	called := false
 	h := &ChatChannelHandler{
 		chatChannelService: fakeChatChannelService{
-			createFn: func(tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
+			createFn: func(tenantID, name, channelType string, config entity.JSONMap, chatID, agentID *string) (*entity.ChatChannel, error) {
 				called = true
 				return nil, nil
 			},
@@ -374,5 +376,61 @@ func TestChatChannelHandlerGetRuntimeSuccess(t *testing.T) {
 	data, _ := payload["data"].(map[string]interface{})
 	if data["status"] != "waiting" {
 		t.Fatalf("payload=%v", payload)
+	}
+}
+
+func TestChatChannelHandlerCreateWithAgentIDAndValidationError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var gotAgentID *string
+	h := &ChatChannelHandler{
+		chatChannelService: fakeChatChannelService{
+			createFn: func(tenantID, name, channelType string, config entity.JSONMap, chatID, agentID *string) (*entity.ChatChannel, error) {
+				gotAgentID = agentID
+				if chatID != nil && agentID != nil {
+					return nil, &service.ChatChannelDataError{Msg: "Choose either a chat assistant or an Agent, not both."}
+				}
+				return &entity.ChatChannel{
+					ID:       "cc-agent",
+					TenantID: tenantID,
+					Name:     name,
+					Channel:  channelType,
+					Config:   config,
+					AgentID:  agentID,
+					Status:   1,
+				}, nil
+			},
+		},
+	}
+
+	router := gin.New()
+	router.POST("/api/v1/chat-channels", func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: "tenant-1"})
+		h.CreateChatChannel(c)
+	})
+
+	// 1. Success with agent_id
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/chat-channels", strings.NewReader(`{"name":"bot-agent","channel":"telegram","config":{"bot_token":"abc"},"agent_id":"agent-1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	if gotAgentID == nil || *gotAgentID != "agent-1" {
+		t.Fatalf("expected agent_id=agent-1, got %v", gotAgentID)
+	}
+
+	// 2. Mutual exclusion returns CodeDataError (102), not CodeServerError (100)
+	resp2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/chat-channels", strings.NewReader(`{"name":"bot-both","channel":"telegram","config":{},"chat_id":"dialog-1","agent_id":"agent-1"}`))
+	req2.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(resp2, req2)
+	var payload map[string]interface{}
+	if err := json.Unmarshal(resp2.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if payload["code"] != float64(common.CodeDataError) {
+		t.Fatalf("expected CodeDataError (%d), got %v", common.CodeDataError, payload)
 	}
 }

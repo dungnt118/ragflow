@@ -2,11 +2,13 @@
     "id": 44,
     "title": {
         "en": "Email",
+        "vi": "Thư điện tử (Email)",
         "de": "E-Mail",
         "zh": "邮件"
     },
     "description": {
-        "en": "This template parses email files, extracting headers, body content, and attachments. Best for .eml and .msg files.",
+        "en": "This template parses email files by extracting structured headers (From, To, CC, Subject, Date), body content, and attachments. Use cases: Archiving customer support mailboxes, auditing commercial negotiation threads, and indexing legal/project correspondence (.eml, .msg).",
+        "vi": "Bóc tách có cấu trúc các trường thông tin thư điện tử (Người gửi, Người nhận, CC, Tiêu đề, Ngày gửi), nội dung chính và tệp đính kèm. Tình huống sử dụng: Lưu trữ và tra cứu hòm thư chăm sóc khách hàng, lịch sử đàm phán thương mại, đối soát thư từ dự án hoặc pháp lý (.eml, .msg).",
         "de": "Diese Vorlage analysiert E-Mail-Dateien und extrahiert Kopfzeilen, Nachrichtentext und Anhänge. Geeignet für .eml- und .msg-Dateien.",
         "zh": "此模板解析电子邮件文件，提取标题、正文内容和附件。适用于 .eml 和 .msg 文件。"
     },

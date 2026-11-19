@@ -3,6 +3,7 @@ import {
   filterBuiltinByKeyword,
   toBuiltinListItem,
   resolveAgentsEmptyState,
+  resolveBuiltinPipelineText,
 } from './builtin-pipeline-list';
 import { AgentCategory } from '@/constants/agent';
 import { AgentListItemType } from '@/interfaces/database/agent';
@@ -16,12 +17,28 @@ const sample = [
     id: 'general',
     title: 'General',
     description: 'Default parsing method',
+    titles: {
+      en: 'General',
+      vi: 'Đa năng (General)',
+    },
+    descriptions: {
+      en: 'Default parsing method',
+      vi: 'Phương pháp bóc tách đa năng cho báo cáo và tài liệu tổng hợp',
+    },
     filename: 'ingestion_pipeline_general.json',
   },
   {
     id: 'book',
     title: 'Book',
     description: 'Long document parsing',
+    titles: {
+      en: 'Book',
+      vi: 'Sách & Giáo trình dài (Book)',
+    },
+    descriptions: {
+      en: 'Long document parsing',
+      vi: 'Bóc tách sách và giáo trình theo cấu trúc chương mục',
+    },
     filename: 'ingestion_pipeline_book.json',
   },
   {
@@ -125,6 +142,36 @@ describe('filterBuiltinByKeyword', () => {
     expect(() => filterBuiltinByKeyword(sample, 'naive')).not.toThrow();
     const result = filterBuiltinByKeyword(sample, 'naive');
     expect(result[0].id).toBe('naive');
+  });
+
+  it('matches against Vietnamese localized titles and descriptions', () => {
+    const byViTitle = filterBuiltinByKeyword(sample, 'Giáo trình');
+    expect(byViTitle).toHaveLength(1);
+    expect(byViTitle[0].id).toBe('book');
+
+    const byViDesc = filterBuiltinByKeyword(sample, 'tài liệu tổng hợp');
+    expect(byViDesc).toHaveLength(1);
+    expect(byViDesc[0].id).toBe('general');
+  });
+});
+
+describe('resolveBuiltinPipelineText', () => {
+  it('resolves Vietnamese text when lang is vi or vi-VN', () => {
+    expect(
+      resolveBuiltinPipelineText(sample[0].titles, sample[0].title, 'vi'),
+    ).toBe('Đa năng (General)');
+    expect(
+      resolveBuiltinPipelineText(sample[0].titles, sample[0].title, 'vi-VN'),
+    ).toBe('Đa năng (General)');
+  });
+
+  it('falls back to English or fallbackText when language is missing', () => {
+    expect(
+      resolveBuiltinPipelineText(sample[0].titles, sample[0].title, 'fr'),
+    ).toBe('General');
+    expect(resolveBuiltinPipelineText(undefined, 'Fallback Title', 'vi')).toBe(
+      'Fallback Title',
+    );
   });
 });
 

@@ -106,6 +106,8 @@ export function SingleChatBox({ conversation }: IProps) {
               deleteDisabled={message.awaitingServerId}
               regenerateMessage={regenerateMessage}
               sendLoading={sendLoading}
+              feedbackConfig={currentDialog?.prompt_config?.feedback_config}
+              sessionId={conversationId}
             />
           ))}
         </div>

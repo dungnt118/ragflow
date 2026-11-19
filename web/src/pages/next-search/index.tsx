@@ -50,7 +50,7 @@ export default function SearchPage() {
 
   return (
     <section
-      className="size-full flex-1 relative px-5 pb-5 flex pt-4"
+      className="size-full flex-1 relative px-2 pb-2 pt-2 sm:px-5 sm:pb-5 sm:pt-4 flex"
       data-testid="search-detail"
     >
       <div className="flex gap-3 flex-1 min-w-0 bg-bg-base border-0.5 border-border-button">
@@ -90,7 +90,7 @@ export default function SearchPage() {
 
       <Button
         variant="transparent"
-        className="bg-bg-card ml-5 shrink-0"
+        className="bg-bg-card ml-2 sm:ml-5 shrink-0"
         onClick={() => setOpenSetting(!openSetting)}
       >
         <Settings className="text-text-secondary" />

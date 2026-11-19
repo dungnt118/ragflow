@@ -1916,3 +1916,126 @@ func TestTaskExecutionDeadlineCapsConnectorTimeout(t *testing.T) {
 func testLockLease() ConnectorLockLease {
 	return ConnectorLockLease{ExpiresAt: time.Now().Add(connectorLockTTL)}
 }
+
+// TestTerminalFailureSchedulesNextPeriodicCycle verifies that once a task
+// exhausts retries and transitions to SyncStatusFail, the connector stays marked
+// as failed for UI alerting while a fresh SCHEDULE task is created for the next
+// periodic cycle with the original PollRangeStart preserved.
+func TestTerminalFailureSchedulesNextPeriodicCycle(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	pollStart := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Updates(map[string]any{
+		"status":           dao.SyncStatusRunning,
+		"error_count":      int64(2),
+		"retry_count":      int64(2),
+		"error_class":      "non_transient",
+		"poll_range_start": entity.NewFlexibleTime(&pollStart),
+	}).Error
+
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	scheduler := NewNATSScheduler(make(chan TaskEnvelope, 1), taskDAO, &fakeSyncTaskBroker{})
+	t.Cleanup(scheduler.stopTimers)
+
+	connector := &connectormock.Connector{
+		SyncBatches: []syncerconnector.SyncBatch{{
+			Documents: []syncerconnector.SourceDocument{{SourceID: "bad", Blob: []byte("x"), UpdatedAt: time.Now()}},
+		}},
+	}
+	sink := &fakeSink{errBySourceID: map[string]error{"bad": errors.New("boom")}}
+	worker := NewTaskWorker(
+		make(chan TaskEnvelope, 1),
+		taskDAO,
+		taskService,
+		newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{}),
+		NewConnectorLock(),
+	).WithScheduler(scheduler)
+	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
+
+	var failedTask entity.SyncLogs
+	if err := db.First(&failedTask, "id = ?", "task-1").Error; err != nil {
+		t.Fatalf("load task-1: %v", err)
+	}
+	if failedTask.Status != dao.SyncStatusFail {
+		t.Fatalf("task-1 status = %s, want fail", failedTask.Status)
+	}
+
+	var conn entity.Connector
+	if err := db.First(&conn, "id = ?", "conn-1").Error; err != nil {
+		t.Fatalf("load connector: %v", err)
+	}
+	if conn.Status != dao.SyncStatusFail {
+		t.Fatalf("connector status = %s, want fail so UI shows alert indicator", conn.Status)
+	}
+
+	var nextTask entity.SyncLogs
+	if err := db.Where("connector_id = ? AND status = ?", "conn-1", dao.SyncStatusSchedule).First(&nextTask).Error; err != nil {
+		t.Fatalf("expected next SCHEDULE task after terminal failure: %v", err)
+	}
+	if nextTask.ID == "task-1" {
+		t.Fatalf("expected a new scheduled task ID distinct from task-1")
+	}
+	if nextTask.PollRangeStart == nil || !nextTask.PollRangeStart.Time().Equal(pollStart) {
+		t.Fatalf("nextTask.PollRangeStart = %v, want %s", nextTask.PollRangeStart, pollStart)
+	}
+
+	scheduled, err := taskDAO.ListScheduledTasks(t.Context(), 10, nil)
+	if err != nil {
+		t.Fatalf("ListScheduledTasks: %v", err)
+	}
+	if len(scheduled) != 1 || scheduled[0].ID != nextTask.ID {
+		t.Fatalf("ListScheduledTasks = %+v, want [%s]", scheduled, nextTask.ID)
+	}
+
+	scheduler.timerMu.Lock()
+	_, timerArmed := scheduler.timers[nextTask.ID]
+	scheduler.timerMu.Unlock()
+	if !timerArmed {
+		t.Fatalf("expected scheduler timer to be armed for %s", nextTask.ID)
+	}
+}
+
+// TestPartialDocumentFailureDoesNotAbortBatch verifies a single bad document
+// increments ErrorCount without discarding successful documents in the batch.
+func TestPartialDocumentFailureDoesNotAbortBatch(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+
+	now := time.Now().UTC()
+	connector := &connectormock.Connector{
+		SyncBatches: []syncerconnector.SyncBatch{{
+			Documents: []syncerconnector.SourceDocument{
+				{SourceID: "good-1", SemanticIdentifier: "Good Doc", Blob: []byte("ok"), UpdatedAt: now},
+				{SourceID: "bad-1", SemanticIdentifier: "Bad Doc", Blob: []byte("fail"), UpdatedAt: now},
+			},
+			Checkpoint: &syncerconnector.SyncCheckpoint{Cursor: "c1", SourceID: "bad-1", UpdatedAt: &now},
+		}},
+	}
+	sink := &fakeSink{errBySourceID: map[string]error{"bad-1": errors.New("bad row")}}
+	worker := NewTaskWorker(
+		make(chan TaskEnvelope, 1),
+		taskDAO,
+		taskService,
+		newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{}),
+		NewConnectorLock(),
+	)
+	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
+
+	var task entity.SyncLogs
+	if err := db.First(&task, "id = ?", "task-1").Error; err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.Status != dao.SyncStatusDone {
+		t.Fatalf("status = %s, want done despite 1 bad document", task.Status)
+	}
+	if task.NewDocsIndexed != 1 || task.ErrorCount != 1 {
+		t.Fatalf("new=%d error_count=%d want 1/1", task.NewDocsIndexed, task.ErrorCount)
+	}
+	if !strings.Contains(task.ErrorMsg, "Bad Doc") {
+		t.Fatalf("error_msg = %q, want Bad Doc detail", task.ErrorMsg)
+	}
+}

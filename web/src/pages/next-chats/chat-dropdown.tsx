@@ -9,9 +9,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useDeleteChat } from '@/hooks/use-chat-request';
 import { IDialog } from '@/interfaces/database/chat';
-import { PenLine, Trash2 } from 'lucide-react';
+import { Logs, PenLine, Trash2 } from 'lucide-react';
 import { MouseEventHandler, PropsWithChildren, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useRenameChat } from './hooks/use-rename-chat';
@@ -26,6 +27,7 @@ export function ChatDropdown({
   }) {
   const { t } = useTranslation();
   const { deleteChat } = useDeleteChat();
+  const { navigateToChatLogs } = useNavigatePage();
 
   const handleShowChatRenameModal: MouseEventHandler<HTMLDivElement> =
     useCallback(
@@ -35,6 +37,14 @@ export function ChatDropdown({
       },
       [chat, showChatRenameModal],
     );
+
+  const handleOpenChatLogs: MouseEventHandler<HTMLDivElement> = useCallback(
+    (e) => {
+      e.stopPropagation();
+      navigateToChatLogs(chat.id)();
+    },
+    [chat.id, navigateToChatLogs],
+  );
 
   const handleDelete: MouseEventHandler<HTMLDivElement> = useCallback(() => {
     deleteChat(chat.id);
@@ -46,6 +56,12 @@ export function ChatDropdown({
       <DropdownMenuContent>
         <DropdownMenuItem onClick={handleShowChatRenameModal}>
           {t('common.rename')} <PenLine />
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={handleOpenChatLogs}
+          data-testid={`chat-dropdown-logs-${chat.id}`}
+        >
+          {t('flow.log', 'Nhật ký & Đánh giá')} <Logs />
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <ConfirmDeleteDialog

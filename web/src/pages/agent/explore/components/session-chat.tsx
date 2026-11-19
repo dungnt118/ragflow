@@ -65,6 +65,24 @@ export function SessionChat({ session }: SessionChatProps) {
   // fall back to the session the request was sent to; only when neither
   // is known is the stream treated as belonging to the displayed session.
   const streamOwnerSessionId = streamSessionId ?? requestedSessionId;
+  const agentFeedbackConfig = canvasInfo?.dsl?.feedback_config;
+  const activeAgentSessionId = sessionId || streamOwnerSessionId || '';
+
+  const handleFeedbackSuccess = useCallback(
+    (
+      messageId: string,
+      patch: {
+        thumbup?: boolean;
+        feedback?: string;
+        feedback_detail?: any;
+      },
+    ) => {
+      setDerivedMessages((prev) =>
+        prev.map((m) => (m.id === messageId ? { ...m, ...patch } : m)),
+      );
+    },
+    [setDerivedMessages],
+  );
   const isStreamingActiveSession =
     sendLoading &&
     (streamOwnerSessionId ? streamOwnerSessionId === sessionId : true);
@@ -188,7 +206,17 @@ export function SessionChat({ session }: SessionChatProps) {
                       }
                       clickDocumentButton={clickDocumentButton}
                       index={i}
-                      showLikeButton={false}
+                      showLikeButton={
+                        agentFeedbackConfig?.enabled !== undefined
+                          ? Boolean(agentFeedbackConfig.enabled)
+                          : false
+                      }
+                      feedbackConfig={agentFeedbackConfig}
+                      sessionId={activeAgentSessionId}
+                      isAgent={true}
+                      targetId={canvasInfo?.id}
+                      channel="web"
+                      onFeedbackSuccess={handleFeedbackSuccess}
                       sendLoading={isStreamingActiveSession}
                       showLog={false}
                     >

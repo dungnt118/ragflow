@@ -2,11 +2,13 @@
     "id": 42,
     "title": {
         "en": "Table",
+        "vi": "Bảng biểu & Số liệu (Table)",
         "de": "Tabelle",
         "zh": "表格"
     },
     "description": {
-        "en": "This template extracts and segments tables from parsed documents. Best for spreadsheet files, financial reports, statistical documents, and any content organized in tabular format.",
+        "en": "This template extracts and segments tabular rows while preserving column headers for every chunk. Use cases: Excel/CSV spreadsheets, financial statements, product catalogs, price lists, inventory logs, and statistical reports.",
+        "vi": "Trích xuất và phân đoạn dữ liệu dạng bảng với cơ chế bảo toàn tiêu đề cột cho từng dòng dữ liệu giúp AI hiểu đúng ý nghĩa con số. Tình huống sử dụng: Bảng tính Excel/CSV, báo cáo tài chính, bảng báo giá, danh mục hàng hóa/vật tư, dữ liệu thống kê và nhật ký kiểm kê.",
         "de": "Diese Vorlage extrahiert und segmentiert Tabellen aus geparsten Dokumenten. Sie eignet sich für Tabellenkalkulationen, Finanzberichte, statistische Dokumente und alle in tabellarischer Form organisierten Inhalte.",
         "zh": "此模板从解析后的文档中提取并切片表格，适用于电子表格、财务报告、统计文档以及其他以表格形式组织的内容。"
     },

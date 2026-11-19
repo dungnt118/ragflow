@@ -2,11 +2,13 @@
     "id": 28,
     "title": {
         "en": "Laws",
+        "vi": "Văn bản Pháp luật & Quy chế (Laws)",
         "de": "Gesetzesbestimmungen",
         "zh": "法律条文"
     },
     "description": {
-        "en": "This template segments parsed files by legal provision hierarchy. Best for documents with clearly defined articles, such as laws, regulations, judicial interpretations, and compliance policies.",
+        "en": "This template segments parsed files by legal provision hierarchy (Part, Chapter, Section, Article, Clause). Use cases: Statutes, decrees, circulars, commercial contracts, service-level agreements (SLAs), corporate governance rules, and compliance policies.",
+        "vi": "Phân tách chính xác theo hệ thống phân cấp pháp lý (Phần - Chương - Mục - Điều - Khoản - Điểm) để không làm sai lệch hiệu lực câu chữ khi trích dẫn. Tình huống sử dụng: Văn bản Luật, Nghị định, Thông tư, Hợp đồng kinh tế, Điều khoản dịch vụ (SLA), Nội quy lao động và Quy chế tuân thủ nội bộ.",
         "de": "Diese Vorlage segmentiert die geparste Datei anhand der Struktur von Gesetzesbestimmungen. Sie eignet sich für Dokumente mit klar definierten Artikel- und Paragraphenhierarchien, wie Gesetze, Verordnungen, richterliche Auslegungen, Compliance-Richtlinien und andere Rechtstexte.",
         "zh": "此模板将解析后的文件按法律条文结构进行切片，适用于具有清晰条、款、项层级的文档类型，如法律、法规、司法解释、合规制度及其他法律文本。"
     },

@@ -17,15 +17,13 @@
 package handler
 
 import (
-	"ragflow/internal/common"
-
 	"github.com/gin-gonic/gin"
 )
 
 func (h *StatsHandler) GetModelStats(c *gin.Context) {
-	common.ErrorWithCode(c, common.CodeNotImplemented, "GetModelStats not implemented")
+	h.GetTokenUsageDashboard(c)
 }
 
 func (h *StatsHandler) GetGroupStats(c *gin.Context) {
-	common.ErrorWithCode(c, common.CodeNotImplemented, "GetGroupStats not implemented")
+	h.GetTokenUsageDashboard(c)
 }

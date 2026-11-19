@@ -96,6 +96,116 @@ func (s *BotService) ChatbotInfo(ctx context.Context, userID, dialogID string) (
 		dialog.LLMID, resolveWebSearchProvider(pc) != nil, common.CodeSuccess, nil
 }
 
+// ChatbotFeedbackConfig returns the sanitized public FeedbackConfig for a chatbot dialog.
+func (s *BotService) ChatbotFeedbackConfig(ctx context.Context, userID, dialogID string) *entity.FeedbackConfig {
+	if s == nil || s.chatDAO == nil || dao.DB == nil {
+		return nil
+	}
+	if err := checkChatPermission(ctx, nil, userID, dialogID, permission.OperationRead); err != nil {
+		return nil
+	}
+	dialog, err := s.chatDAO.GetDialogByID(ctx, dao.DB, dialogID)
+	if err != nil || dialog == nil {
+		return nil
+	}
+	return entity.SanitizePublicFeedbackConfig(entity.ExtractFeedbackConfig(dialog.PromptConfig))
+}
+
+// AgentbotFeedbackConfig returns the sanitized public FeedbackConfig for an agentbot canvas.
+func (s *BotService) AgentbotFeedbackConfig(ctx context.Context, userID, agentID string) *entity.FeedbackConfig {
+	if s == nil || s.canvasDAO == nil || dao.DB == nil {
+		return nil
+	}
+	cv, err := s.loadCanvas(ctx, userID, agentID, permission.OperationRead)
+	if err != nil || cv == nil {
+		return nil
+	}
+	return entity.SanitizePublicFeedbackConfig(entity.ExtractFeedbackConfig(canvasDSLMap(cv)))
+}
+
+// ChatbotFeedback records a feedback rating on a public chatbot session stored in api_4_conversation.
+func (s *BotService) ChatbotFeedback(
+	ctx context.Context, userID, dialogID, sessionID, msgID string, req map[string]interface{},
+) (map[string]interface{}, common.ErrorCode, error) {
+	if err := checkChatPermission(ctx, nil, userID, dialogID, permission.OperationRead); err != nil {
+		ec, normalizedErr := normalizeChatPermissionError(err)
+		return nil, ec, normalizedErr
+	}
+	dialog, err := s.chatDAO.GetDialogByID(ctx, dao.DB, dialogID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			ec, normalizedErr := normalizeChatPermissionError(permission.ErrResourceNotFound)
+			return nil, ec, normalizedErr
+		}
+		return nil, common.CodeServerError, err
+	}
+	if dialog == nil {
+		ec, normalizedErr := normalizeChatPermissionError(permission.ErrResourceNotFound)
+		return nil, ec, normalizedErr
+	}
+
+	conv, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, dialogID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if conv == nil || conv.DialogID != dialogID {
+		return nil, common.CodeDataError, errors.New("session not found")
+	}
+
+	feedbackCfg := entity.ExtractFeedbackConfig(dialog.PromptConfig)
+	return updateAPI4ConversationFeedback(
+		ctx,
+		s.api4ConversationDAO,
+		conv,
+		dialog.TenantID,
+		"chat",
+		dialogID,
+		msgID,
+		req,
+		feedbackCfg,
+		"widget",
+		userID,
+		s.agentService,
+	)
+}
+
+// AgentbotFeedback records a feedback rating on a public agentbot session stored in api_4_conversation.
+func (s *BotService) AgentbotFeedback(
+	ctx context.Context, userID, agentID, sessionID, msgID string, req map[string]interface{},
+) (map[string]interface{}, common.ErrorCode, error) {
+	cv, err := s.loadCanvas(ctx, userID, agentID, permission.OperationRead)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	conv, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, agentID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if conv == nil || conv.DialogID != agentID {
+		return nil, common.CodeDataError, errors.New("session not found")
+	}
+
+	feedbackCfg := entity.ExtractFeedbackConfig(canvasDSLMap(cv))
+	tenantID := userID
+	if cv != nil {
+		tenantID = cv.EffectiveTenantID()
+	}
+	return updateAPI4ConversationFeedback(
+		ctx,
+		s.api4ConversationDAO,
+		conv,
+		tenantID,
+		"agent",
+		agentID,
+		msgID,
+		req,
+		feedbackCfg,
+		"widget",
+		userID,
+		s.agentService,
+	)
+}
+
 // AgentbotInputs returns the public metadata of an agentbot canvas.
 //
 // Mirrors the python `bot_api.py::agentbot_inputs` handler. The

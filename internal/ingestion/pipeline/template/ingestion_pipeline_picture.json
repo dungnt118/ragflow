@@ -2,11 +2,13 @@
     "id": 47,
     "title": {
         "en": "Picture",
+        "vi": "Hình ảnh & Video (Picture)",
         "de": "Bild & Video",
         "zh": "图片与视频"
     },
     "description": {
-        "en": "This template extracts text from images via OCR and describes video content using vision models. Supports .jpg, .png, .gif image formats and .mp4, .avi, .mkv video formats.",
+        "en": "This template extracts text from images via OCR and describes visual or video scenes using multimodal Vision LLMs. Use cases: Scanned invoices/receipts, architectural diagrams, infographics, UI screenshots, handwritten forms (.jpg, .png), and training videos (.mp4, .avi, .mkv).",
+        "vi": "Kết hợp nhận diện chữ quang học (OCR) và mô hình thị giác (Vision LLM) để trích xuất văn bản và mô tả chi tiết nội dung hình ảnh/video. Tình huống sử dụng: Ảnh chụp hóa đơn/chứng từ, sơ đồ kiến trúc kỹ thuật, infographic, biên bản viết tay (.jpg, .png, .gif) và video hướng dẫn (.mp4, .avi, .mkv).",
         "de": "Diese Vorlage extrahiert Text aus Bildern mittels OCR und beschreibt Videoinhalte mithilfe von Vision-Modellen. Unterstützt .jpg, .png, .gif Bildformate und .mp4, .avi, .mkv Videoformate.",
         "zh": "此模板通过OCR从图片中提取文本，并使用视觉模型描述视频内容。支持 .jpg、.png、.gif 图片格式和 .mp4、.avi、.mkv 视频格式。"
     },

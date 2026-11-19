@@ -313,6 +313,12 @@ export default {
     `${restAPIv1}/chats/${chatId}/sessions/${sessionId}/messages/${msgId}`,
   thumbup: (chatId: string, sessionId: string, msgId: string) =>
     `${restAPIv1}/chats/${chatId}/sessions/${sessionId}/messages/${msgId}/feedback`,
+  chatbotThumbup: (dialogId: string, sessionId: string, msgId: string) =>
+    `${restAPIv1}/chatbots/${dialogId}/sessions/${sessionId}/messages/${msgId}/feedback`,
+  agentThumbup: (canvasId: string, sessionId: string, msgId: string) =>
+    `${restAPIv1}/agents/${canvasId}/sessions/${sessionId}/messages/${msgId}/feedback`,
+  agentbotThumbup: (agentId: string, sessionId: string, msgId: string) =>
+    `${restAPIv1}/agentbots/${agentId}/sessions/${sessionId}/messages/${msgId}/feedback`,
   completionUrl: `${restAPIv1}/chat/completions`,
   chatsTts: `${restAPIv1}/chat/audio/speech`,
   searchCompletion: (searchId: string) =>
@@ -332,6 +338,7 @@ export default {
   connectFileToKnowledge: `${restAPIv1}/files/link-to-datasets`,
   getFile: `${restAPIv1}/files`,
   moveFile: `${restAPIv1}/files/move`,
+  batchDownloadFile: `${restAPIv1}/files/download`,
 
   // system
   getSystemVersion: `${restAPIv1}/system/version`,
@@ -347,6 +354,7 @@ export default {
   listAgentTags: `${restAPIv1}/agents/tags`,
   updateAgentTags: (agentId: string) => `${restAPIv1}/agents/${agentId}/tags`,
   createAgent: `${restAPIv1}/agents`,
+  generateAgentByAI: `${restAPIv1}/agents/generate-by-ai`,
   updateAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
   deleteAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
   agentChatCompletion: `${restAPIv1}/agents/chat/completions`,
@@ -375,6 +383,11 @@ export default {
     `${restAPIv1}/agents/${agentId}/sessions`,
   fetchAgentSessionById: (agentId: string, sessionId: string) =>
     `${restAPIv1}/agents/${agentId}/sessions/${sessionId}`,
+  feedbackSessions: `${restAPIv1}/feedback/sessions`,
+  chatFeedbackSessions: (chatId: string) =>
+    `${restAPIv1}/chats/${chatId}/feedback-sessions`,
+  agentFeedbackSessions: (canvasId: string) =>
+    `${restAPIv1}/agents/${canvasId}/feedback-sessions`,
   fetchExternalAgentInputs: (canvasId: string) =>
     `${restAPIv1}/agentbots/${canvasId}/inputs`,
   prompt: `${restAPIv1}/agents/prompts`,

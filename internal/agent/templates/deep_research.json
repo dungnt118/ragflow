@@ -2,11 +2,13 @@
         "id": 1,
         "title": {
             "en": "Deep research",
+            "vi": "Nghiên cứu Chuyên sâu Đa tác tử (Deep Research)",
             "de": "Tiefgehende Recherche",
             "zh": "Deep research"
         },
         "description": {
             "en": "For professionals in sales, marketing, policy, or consulting, the Multi-Agent Deep research Agentic workflow conducts structured, multi-step investigations across diverse sources and delivers consulting-style reports with clear citations.",
+            "vi": "Quy trình nghiên cứu chuyên sâu đa tác tử (Multi-Agent): tự động phân rã chủ đề phức tạp, lập kế hoạch thu thập thông tin đa bước từ nhiều nguồn và tổng hợp báo cáo phân tích chuyên nghiệp chuẩn tư vấn kèm trích dẫn rõ ràng. Tình huống sử dụng: Nghiên cứu thị trường, thẩm định chính sách, lập báo cáo chiến lược kinh doanh.",
             "de": "Für Fachleute in Vertrieb, Marketing, Politik oder Beratung führt der Multi-Agenten-Tiefenforschungsagent strukturierte, mehrstufige Untersuchungen über verschiedene Quellen durch und liefert Berichte im Beratungsstil mit klaren Quellenangaben.",
             "zh": "专为销售、市场、政策或咨询领域的专业人士设计，多智能体的 Deep research 会结合多源信息进行结构化、多步骤地回答问题，并附带有清晰的引用。"
         },

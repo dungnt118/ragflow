@@ -19,7 +19,7 @@ import { useEffect, useState } from 'react';
 export function useLoadingPause(
   loading: boolean,
   content: string,
-  delay = 600,
+  delay = 150,
 ) {
   const [show, setShow] = useState(false);
 
@@ -29,6 +29,7 @@ export function useLoadingPause(
       return;
     }
 
+    setShow(true);
     const timer = setTimeout(() => {
       setShow(true);
     }, delay);

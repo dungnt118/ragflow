@@ -42,10 +42,12 @@ var builtinTemplateFS embed.FS
 // JSON tag "id" aligns with AgentItem.id for format consistency with
 // GET /api/v1/agents?canvas_category=dataflow_canvas.
 type BuiltinPipelineMeta struct {
-	ParserID    string `json:"id"`
-	Title       string `json:"title"`
-	Description string `json:"description,omitempty"`
-	Filename    string `json:"filename"`
+	ParserID     string            `json:"id"`
+	Title        string            `json:"title"`
+	Description  string            `json:"description,omitempty"`
+	Titles       map[string]string `json:"titles,omitempty"`
+	Descriptions map[string]string `json:"descriptions,omitempty"`
+	Filename     string            `json:"filename"`
 }
 
 // BuiltinPipelineListResponse wraps the builtin pipeline list for
@@ -164,7 +166,7 @@ func (r *Registry) List() *BuiltinPipelineListResponse {
 		if item == nil {
 			continue
 		}
-		cp := *item
+		cp := cloneBuiltinPipelineMeta(*item)
 		out = append(out, &cp)
 	}
 	return &BuiltinPipelineListResponse{
@@ -197,7 +199,26 @@ func (r *Registry) Get(ref string) (*BuiltinPipeline, bool) {
 		return nil, false
 	}
 	cp := *tpl
+	cp.BuiltinPipelineMeta = cloneBuiltinPipelineMeta(tpl.BuiltinPipelineMeta)
 	return &cp, true
+}
+
+func cloneBuiltinPipelineMeta(m BuiltinPipelineMeta) BuiltinPipelineMeta {
+	if len(m.Titles) > 0 {
+		titles := make(map[string]string, len(m.Titles))
+		for k, v := range m.Titles {
+			titles[k] = v
+		}
+		m.Titles = titles
+	}
+	if len(m.Descriptions) > 0 {
+		descs := make(map[string]string, len(m.Descriptions))
+		for k, v := range m.Descriptions {
+			descs[k] = v
+		}
+		m.Descriptions = descs
+	}
+	return m
 }
 
 // IsValid reports whether ref names a builtin template, either directly or
@@ -232,10 +253,12 @@ func parseTemplate(filename string, raw []byte) (*BuiltinPipeline, error) {
 	}
 	tpl := &BuiltinPipeline{
 		BuiltinPipelineMeta: BuiltinPipelineMeta{
-			ParserID:    ref,
-			Title:       englishText(data["title"], ref),
-			Description: englishText(data["description"], ""),
-			Filename:    filename,
+			ParserID:     ref,
+			Title:        englishText(data["title"], ref),
+			Description:  englishText(data["description"], ""),
+			Titles:       localizedTextMap(data["title"]),
+			Descriptions: localizedTextMap(data["description"]),
+			Filename:     filename,
 		},
 		DSL: dsl,
 	}
@@ -290,4 +313,21 @@ func englishText(v any, fallback string) string {
 		}
 	}
 	return fallback
+}
+
+func localizedTextMap(v any) map[string]string {
+	rawMap, ok := v.(map[string]any)
+	if !ok || len(rawMap) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(rawMap))
+	for k, raw := range rawMap {
+		if s, ok := raw.(string); ok && strings.TrimSpace(s) != "" {
+			out[strings.TrimSpace(k)] = strings.TrimSpace(s)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

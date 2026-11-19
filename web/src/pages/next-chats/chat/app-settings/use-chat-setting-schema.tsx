@@ -2,6 +2,7 @@ import {
   LlmSettingEnabledSchema,
   LlmSettingFieldSchema,
 } from '@/components/llm-setting-items/next';
+import { FeedbackConfigSchema } from '@/components/feedback-config-fields';
 import { MetadataFilterSchema } from '@/components/metadata-filter';
 import { rerankCandidatesCountSchema } from '@/components/rerank-candidates-count-item';
 import { rerankFormSchema } from '@/components/rerank';
@@ -77,6 +78,7 @@ export function buildChatSettingFormSchema(t: (key: string) => string) {
       })
       .nullable()
       .optional(),
+    feedback_config: FeedbackConfigSchema,
   });
 
   const formSchema = z

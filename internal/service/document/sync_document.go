@@ -24,6 +24,7 @@ import (
 	"ragflow/internal/common"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -299,15 +300,17 @@ func (s *DocumentService) updateSyncDocumentFile(ctx context.Context, input serv
 
 // syncDocumentFilename returns a bounded filename for a synced source document.
 func syncDocumentFilename(name, extension, fallback string) string {
+	name = strings.ToValidUTF8(name, "")
 	name = strings.TrimSpace(syncFilenameUnsafeRE.ReplaceAllString(name, "_"))
 	if name == "" {
+		fallback = strings.ToValidUTF8(fallback, "")
 		name = strings.TrimSpace(syncFilenameUnsafeRE.ReplaceAllString(fallback, "_"))
 	}
 	if name == "" {
 		name = "document"
 	}
 
-	extension = strings.TrimSpace(extension)
+	extension = strings.ToValidUTF8(strings.TrimSpace(extension), "")
 	if extension == "" {
 		extension = ".txt"
 	}
@@ -326,10 +329,24 @@ func syncDocumentFilename(name, extension, fallback string) string {
 	ext := filepath.Ext(name)
 	baseLimit := 255 - len(ext)
 	if baseLimit < 1 {
-		return name[:255]
+		return truncateUTF8Bytes(name, 255)
 	}
 
-	return name[:baseLimit] + ext
+	return truncateUTF8Bytes(name[:len(name)-len(ext)], baseLimit) + ext
+}
+
+// truncateUTF8Bytes slices s to at most maxBytes without splitting a multi-byte UTF-8 rune.
+func truncateUTF8Bytes(s string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if len(s) <= maxBytes {
+		return s
+	}
+	for maxBytes > 0 && !utf8.RuneStart(s[maxBytes]) {
+		maxBytes--
+	}
+	return s[:maxBytes]
 }
 
 // syncDocumentStagedLocation returns a unique object-storage key for unpublished synced content.

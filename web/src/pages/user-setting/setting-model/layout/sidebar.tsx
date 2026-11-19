@@ -21,9 +21,11 @@ import {
   useFetchAvailableProviders,
 } from '@/hooks/use-llm-request';
 import { cn } from '@/lib/utils';
-import { ChevronRight } from 'lucide-react';
+import { Routes } from '@/routes';
+import { BarChart3, ChevronRight } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router';
 
 /**
  * Sidebar selection type for the right pane.
@@ -52,6 +54,7 @@ interface SidebarProps {
  */
 export function Sidebar({ selection, onSelect }: SidebarProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { data: providers } = useFetchAvailableProviders();
   const { data: addedProviders } = useFetchAddedProviders();
   const [search, setSearch] = useState('');
@@ -91,6 +94,19 @@ export function Sidebar({ selection, onSelect }: SidebarProps) {
         data-testid="sidebar-default-models"
       >
         <span className="font-medium">{t('setting.systemModelSettings')}</span>
+        <ChevronRight className="size-4" />
+      </button>
+
+      <button
+        type="button"
+        className="flex items-center justify-between px-3 py-2 rounded-md text-sm transition-colors border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+        onClick={() => navigate(`${Routes.UserSetting}${Routes.TokenUsage}`)}
+        data-testid="sidebar-token-cost-dashboard"
+      >
+        <span className="flex items-center gap-2 font-medium">
+          <BarChart3 className="size-4" />
+          AI Token & Chi phí
+        </span>
         <ChevronRight className="size-4" />
       </button>
 

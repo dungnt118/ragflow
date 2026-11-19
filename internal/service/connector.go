@@ -292,6 +292,9 @@ func (s *ConnectorService) CreateConnector(ctx context.Context, userID string, r
 		return nil, fmt.Errorf("%w: prune_freq got %d", ErrConnectorInvalidFreq, *req.PruneFreq)
 	}
 	refreshFreq := int64(defaultConnectorFreq)
+	if req.Source == "web_crawler" || req.Source == "sitemap" {
+		refreshFreq = 360 // Default to 6 hours for web crawling and sitemap syncing
+	}
 	if req.RefreshFreq != nil {
 		refreshFreq = *req.RefreshFreq
 	}
